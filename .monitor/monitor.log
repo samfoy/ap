@@ -84,3 +84,6 @@ The gap is straightforward: the monitor picked up other backlog items (self-host
 [15:11:17] Ralph running for Background process management + tmux sub-agents
 [15:11:17] Starting: Streaming improvements
 [15:11:17] Created worktree: /Users/sam.painter/Projects/ap-worktrees/streaming-improvements (feature/streaming-improvements)
+[15:11:20] Ralph running for Streaming improvements
+[15:11:20] Starting: Semantic search over sessions + directories
+[15:11:20] Created worktree: /Users/sam.painter/Projects/ap-worktrees/semantic-search-over-sessions-directorie (feature/semantic-search-over-sessions-directorie)
