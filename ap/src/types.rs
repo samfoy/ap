@@ -20,6 +20,8 @@ pub struct Conversation {
     pub messages: Vec<Message>,
     #[serde(default)]
     pub config: AppConfig,
+    #[serde(default)]
+    pub system_prompt: Option<String>,
 }
 
 impl Conversation {
@@ -33,7 +35,14 @@ impl Conversation {
             model: model.into(),
             messages: Vec::new(),
             config,
+            system_prompt: None,
         }
+    }
+
+    /// Return a new `Conversation` with the system prompt set.
+    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
+        self
     }
 
     /// Return a new `Conversation` with a user message appended.
@@ -235,5 +244,27 @@ mod tests {
         assert_eq!(conv.id, "id-1");
         assert_eq!(conv.model, "model-a");
         assert!(conv.messages.is_empty());
+    }
+
+    // AC (step-04): with_system_prompt builder sets the field
+    #[test]
+    fn conversation_with_system_prompt_builder() {
+        let conv = Conversation::new("id-1", "model-a", dummy_config())
+            .with_system_prompt("be concise");
+        assert_eq!(conv.system_prompt, Some("be concise".to_string()));
+    }
+
+    // AC (step-04): old JSON without system_prompt deserializes successfully (backward compat)
+    #[test]
+    fn conversation_serde_backward_compat() {
+        let old_json = r#"{
+            "id": "old-id",
+            "model": "claude-3",
+            "messages": [],
+            "config": {}
+        }"#;
+        let conv: Conversation = serde_json::from_str(old_json).expect("should deserialize");
+        assert_eq!(conv.id, "old-id");
+        assert_eq!(conv.system_prompt, None);
     }
 }

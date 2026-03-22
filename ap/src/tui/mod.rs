@@ -141,6 +141,7 @@ impl TuiApp {
                 &'a self,
                 _messages: &'a [crate::provider::Message],
                 _tools: &'a [serde_json::Value],
+                _system_prompt: Option<&'a str>,
             ) -> futures::stream::BoxStream<'a, Result<crate::provider::StreamEvent, crate::provider::ProviderError>> {
                 Box::pin(futures::stream::empty())
             }

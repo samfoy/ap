@@ -75,12 +75,17 @@ impl BedrockProvider {
     fn build_request_body(
         messages: &[Message],
         tools: &[serde_json::Value],
+        system_prompt: Option<&str>,
     ) -> serde_json::Value {
         let mut body = json!({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 8192,
             "messages": Self::build_messages(messages),
         });
+
+        if let Some(sp) = system_prompt {
+            body["system"] = json!(sp);
+        }
 
         if !tools.is_empty() {
             body["tools"] = serde_json::Value::Array(tools.to_vec());
@@ -159,8 +164,9 @@ impl Provider for BedrockProvider {
         &'a self,
         messages: &'a [Message],
         tools: &'a [serde_json::Value],
+        system_prompt: Option<&'a str>,
     ) -> BoxStream<'a, Result<StreamEvent, ProviderError>> {
-        let body = Self::build_request_body(messages, tools);
+        let body = Self::build_request_body(messages, tools, system_prompt);
         let body_bytes = match serde_json::to_vec(&body) {
             Ok(b) => b,
             Err(e) => {
@@ -406,7 +412,7 @@ mod tests {
     #[test]
     fn test_build_request_body_no_tools() {
         let messages = vec![Message::user("Hello")];
-        let body = BedrockProvider::build_request_body(&messages, &[]);
+        let body = BedrockProvider::build_request_body(&messages, &[], None);
         assert_eq!(body["anthropic_version"], "bedrock-2023-05-31");
         assert!(body["tools"].is_null());
     }
@@ -415,8 +421,25 @@ mod tests {
     fn test_build_request_body_with_tools() {
         let messages = vec![Message::user("Hello")];
         let tools = vec![json!({"name": "bash", "description": "Run a command"})];
-        let body = BedrockProvider::build_request_body(&messages, &tools);
+        let body = BedrockProvider::build_request_body(&messages, &tools, None);
         assert!(body["tools"].is_array());
         assert_eq!(body["tools"][0]["name"], "bash");
+    }
+
+    // AC (step-04): system prompt included in request body when Some
+    #[test]
+    fn bedrock_build_request_body_with_system_prompt() {
+        let messages = vec![Message::user("Hello")];
+        let body = BedrockProvider::build_request_body(&messages, &[], Some("be concise"));
+        assert_eq!(body["system"], "be concise");
+    }
+
+    // AC (step-04): system field absent from request body when None
+    #[test]
+    fn bedrock_build_request_body_no_system_prompt() {
+        let messages = vec![Message::user("Hello")];
+        let body = BedrockProvider::build_request_body(&messages, &[], None);
+        assert!(body.get("system").is_none() || body["system"].is_null(),
+            "system key should be absent when system_prompt is None");
     }
 }

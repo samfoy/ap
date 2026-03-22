@@ -76,6 +76,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "futures",
+ "indexmap",
  "ratatui",
  "reqwest",
  "serde",

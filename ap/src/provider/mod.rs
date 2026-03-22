@@ -97,6 +97,7 @@ pub trait Provider: Send + Sync {
         &'a self,
         messages: &'a [Message],
         tools: &'a [serde_json::Value],
+        system_prompt: Option<&'a str>,
     ) -> BoxStream<'a, Result<StreamEvent, ProviderError>>;
 }
 

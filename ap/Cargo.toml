@@ -45,6 +45,9 @@ thiserror = "2"
 # Temp files for hooks
 tempfile = "3"
 
+# Ordered map (preserves TOML insertion order for tool params)
+indexmap = { version = "2", features = ["serde"] }
+
 # Home directory resolution
 dirs = "5"
 
