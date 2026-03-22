@@ -1,5 +1,5 @@
 {
-  "pid": 81656,
-  "started": "2026-03-22T15:33:13.485135Z",
-  "prompt": "# ap — FP Refactor\n\nRefactor the existing `ap` Rust agent (in `ap/`) toward a functional, pipelin..."
+  "pid": 96531,
+  "started": "2026-03-22T17:09:20.390826Z",
+  "prompt": "Here's what the PROMPT.md covers:\n\n**Vision** — frames the \"why\": projects have specific workflow..."
 }

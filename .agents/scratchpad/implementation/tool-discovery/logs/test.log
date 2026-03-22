@@ -1,0 +1,149 @@
+
+running 123 tests
+test config::tests::test_defaults_when_no_file ... ok
+test discovery::tests::discover_empty_dir_returns_empty_result ... ok
+test discovery::tests::discover_missing_skills_dir_is_silent ... ok
+test config::tests::test_load_project_config ... ok
+test config::tests::test_global_config_merged ... ok
+test config::tests::test_project_overrides_global ... ok
+test discovery::tests::discover_malformed_tools_toml_produces_warning_no_panic ... ok
+test discovery::tests::discover_malformed_skill_file_produces_warning ... ok
+test config::tests::test_invalid_toml_returns_error ... ok
+test discovery::tests::discover_partial_tools_toml_skips_entire_file ... ok
+test discovery::tests::test_empty_tools_toml_does_not_error ... ok
+test discovery::tests::discover_system_prompt_accumulates_across_skill_files ... ok
+test discovery::tests::test_param_spec_required_defaults_to_true ... ok
+test discovery::tests::test_param_spec_required_false_explicit ... ok
+test discovery::tests::discover_skill_file_tools_and_system_prompt_extracted ... ok
+test discovery::tests::discover_valid_tools_toml_parsed_correctly ... ok
+test discovery::tests::discover_tools_toml_wins_over_skill_file_on_duplicate ... ok
+test discovery::tests::discover_alphabetically_first_skill_wins_on_duplicate ... ok
+test discovery::tests::test_tools_file_parses_correctly ... ok
+test discovery::tests::test_skill_file_parses_correctly ... ok
+test hooks::runner::integration_tests::observer_hook_proceed_when_no_hook_configured ... ok
+test discovery::tests::discover_param_insertion_order_preserved ... ok
+test discovery::tests::discover_skill_files_processed_alphabetically ... ok
+test middleware::tests::post_tool_transform_overrides ... ok
+test hooks::runner::tests::hook_not_found_returns_warning ... ok
+test middleware::tests::pre_tool_first_block_stops_chain ... ok
+test middleware::tests::pre_tool_all_allow_both_called ... ok
+test middleware::tests::pre_turn_modifies_conversation ... ok
+test middleware::tests::shell_hook_bridge_empty_config_is_noop ... ok
+test provider::bedrock::tests::bedrock_build_request_body_no_system_prompt ... ok
+test provider::bedrock::tests::bedrock_build_request_body_with_system_prompt ... ok
+test hooks::runner::tests::observer_hook_warning_on_nonzero_exit ... ok
+test provider::bedrock::tests::test_build_messages_text ... ok
+test provider::bedrock::tests::test_build_messages_tool_use ... ok
+test provider::bedrock::tests::test_build_request_body_no_tools ... ok
+test provider::bedrock::tests::test_build_request_body_with_tools ... ok
+test hooks::runner::tests::post_tool_call_transforms_on_nonempty_stdout ... ok
+test hooks::runner::tests::pre_tool_call_cancels_on_nonzero_exit ... ok
+test middleware::tests::shell_hook_bridge_block_on_cancelled ... ok
+test hooks::runner::tests::pre_tool_call_proceeds_on_exit_0 ... ok
+test hooks::runner::tests::post_tool_call_passthrough_on_empty_stdout ... ok
+test provider::bedrock::tests::test_content_block_stop_after_text_block_no_tool_use_end ... ok
+test provider::bedrock::tests::test_input_json_delta_event ... ok
+test provider::bedrock::tests::test_message_delta_event ... ok
+test provider::bedrock::tests::test_text_delta_event ... ok
+test provider::tests::test_message_constructors ... ok
+test provider::tests::test_stream_event_variants ... ok
+test provider::tests::test_provider_error_display ... ok
+test session::store::tests::test_load_conversation_missing_returns_error ... ok
+test provider::bedrock::tests::test_in_tool_use_resets_after_stop ... ok
+test provider::bedrock::tests::test_content_block_stop_after_tool_use_block_emits_tool_use_end ... ok
+test session::store::tests::test_load_conversation_tolerates_missing_config ... ok
+test session::store::tests::test_load_nonexistent_returns_error ... ok
+test session::store::tests::test_save_conversation_creates_dir ... ok
+test session::tests::test_session_new_has_empty_messages ... ok
+test hooks::runner::integration_tests::observer_hook_writes_messages_to_temp_file ... ok
+test session::store::tests::test_save_and_load_conversation_roundtrip ... ok
+test session::tests::test_session_generate_is_uuid ... ok
+test session::store::tests::test_save_and_load_via_store ... ok
+test session::store::tests::test_missing_dir_created_by_save ... ok
+test tools::bash::tests::test_bash_schema_has_name ... ok
+test tools::edit::tests::test_edit_multiple_matches_returns_error_with_count ... ok
+test tools::edit::tests::test_edit_old_text_not_found ... ok
+test tools::edit::tests::test_edit_schema_has_name ... ok
+test tools::edit::tests::test_edit_replaces_unique_text ... ok
+test tools::read::tests::test_read_missing_param_is_error ... ok
+test tools::read::tests::test_read_existing_file ... ok
+test tools::read::tests::test_read_schema_has_name ... ok
+test tools::read::tests::test_read_missing_file_is_error ... ok
+test tools::bash::tests::test_bash_nonzero_exit_is_not_tool_error ... ok
+test tools::bash::tests::test_bash_captures_stdout_stderr_exit ... ok
+test tools::shell::tests::missing_required_param_returns_error ... ok
+test tools::bash::tests::test_bash_zero_exit ... ok
+test tools::shell::tests::schema_optional_params_in_properties_not_required ... ok
+test tools::shell::tests::schema_required_params_in_required_array ... ok
+test tools::shell::tests::spawn_failure_returns_error ... ok
+test tools::tests::registry_with_builder_chains_tools ... ok
+test tools::tests::registry_with_builder_is_consuming ... ok
+test tools::tests::registry_with_defaults_still_works ... ok
+test tools::tests::test_registry_find_by_name ... ok
+test tools::tests::test_registry_with_defaults_has_four_schemas ... ok
+test tools::write::tests::test_write_creates_file ... ok
+test tools::write::tests::test_write_creates_parent_directories ... ok
+test tools::write::tests::test_write_overwrites_existing_file ... ok
+test tools::write::tests::test_write_schema_has_name ... ok
+test tui::events::tests::ctrl_c_quits_in_insert_mode ... ok
+test tui::events::tests::ctrl_c_quits_in_normal_mode ... ok
+test tui::events::tests::help_overlay_dismissed_by_esc ... ok
+test tui::events::tests::insert_mode_backspace_removes_last_char ... ok
+test tui::events::tests::insert_mode_enter_submits_buffer ... ok
+test tui::events::tests::insert_mode_esc_returns_normal ... ok
+test tui::events::tests::normal_mode_i_enters_insert ... ok
+test tui::events::tests::normal_mode_scroll_j_increments_offset ... ok
+test tui::events::tests::normal_mode_scroll_k_decrements_offset ... ok
+test tui::tests::handle_ui_event_error_logged_to_messages ... ok
+test tui::tests::handle_ui_event_text_chunk_appends ... ok
+test tui::tests::handle_ui_event_tool_complete_err_logged ... ok
+test tui::tests::handle_ui_event_tool_complete_ok_logged ... ok
+test tui::tests::handle_ui_event_tool_start_logged ... ok
+test tui::tests::handle_ui_event_turn_end_increments_message_count ... ok
+test tui::tests::headless_app_starts_in_normal_mode ... ok
+test tui::tests::turn_end_clears_waiting_state ... ok
+test turn::tests::turn_emits_text_chunks_in_order ... ok
+test tools::bash::tests::test_bash_stdout_stderr_separated_without_trailing_newline ... ok
+test turn::tests::turn_pre_tool_block_skips_execution ... ok
+test turn::tests::turn_pre_tool_transform_skips_execution ... ok
+test turn::tests::turn_provider_error_emits_error_and_returns_err ... ok
+test turn::tests::turn_text_only_response ... ok
+test tools::shell::tests::env_var_key_is_uppercased ... ok
+test tools::shell::tests::execute_with_required_params_succeeds ... ok
+test types::tests::conversation_serde_backward_compat ... ok
+test tools::shell::tests::optional_param_absent_runs_successfully ... ok
+test tools::shell::tests::command_runs_in_root_dir ... ok
+test types::tests::conversation_new_has_empty_messages ... ok
+test types::tests::conversation_with_system_prompt_builder ... ok
+test types::tests::conversation_with_user_message_appends ... ok
+test tools::shell::tests::nonzero_exit_is_not_tool_error ... ok
+test types::tests::tool_middleware_result_variants ... ok
+test types::tests::turn_event_variants_are_clonable ... ok
+test types::tests::tool_call_roundtrip_serde ... ok
+test turn::tests::turn_pre_tool_allow_passes_through ... ok
+test turn::tests::turn_with_tool_call_executes_and_loops ... ok
+test provider::bedrock::tests::test_bedrock_provider_constructs_without_panic ... ok
+
+test result: ok. 123 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+
+running 2 tests
+test tests::test_binary_name ... ok
+test tests::test_version_string ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+test headless_mode_extracted_from_prompt_some ... ok
+test headless_receives_text_chunk_and_turn_end ... ok
+test headless_emits_error_on_provider_failure ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 1 test
+test src/tools/mod.rs - tools::ToolRegistry::with (line 84) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
