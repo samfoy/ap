@@ -23,7 +23,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 3. [~] **Tool discovery** — `ap` can discover available tools from a project's context (reads `AGENTS.md`, `tools.toml`, skill directories). Presents discovered tools to Claude alongside built-ins.
 
-4. [ ] **Richer TUI** — Syntax highlighted code blocks in conversation pane. Tool call details expandable (press `e` on a tool result to expand). Token count + cost display in status bar. Scrollback history preserved across turns. Input: multi-line with `Ctrl+Enter` to submit, `Enter` for newline.
+4. [~] **Richer TUI** — Syntax highlighted code blocks in conversation pane. Tool call details expandable (press `e` on a tool result to expand). Token count + cost display in status bar. Scrollback history preserved across turns. Input: multi-line with `Ctrl+Enter` to submit, `Enter` for newline.
 
 5. [ ] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal:
     - Markdown: headings, bold/italic, inline code, fenced code blocks with syntax highlighting, bullet lists, numbered lists, blockquotes — rendered via `termimad` or `pulldown-cmark` + custom ratatui renderer
