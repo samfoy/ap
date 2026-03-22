@@ -217,11 +217,8 @@ The next development goal is: **{title}**
 Backlog item spec:
 {body}
 
-Past completed work:
-{run("git log --oneline -15").stdout.strip()}
-
-Monitor memory:
-{MEMORY.read_text() if MEMORY.exists() else "(none yet)"}
+Past completed work (recent git log):
+{run("git log --oneline -10").stdout.strip()}
 
 Write a detailed PROMPT.md for a Ralph pdd-to-code-assist loop to implement this goal.
 Include: vision, technical requirements with specific Rust types/signatures, ordered implementation steps (each independently compilable), acceptance criteria.
@@ -232,7 +229,7 @@ Output only the PROMPT.md content."""
         ["pi", "--provider", "amazon-bedrock",
          "--model", "us.anthropic.claude-sonnet-4-6",
          "--print", context],
-        capture_output=True, text=True, env={**os.environ}, timeout=120
+        capture_output=True, text=True, env={**os.environ}, timeout=300
     )
     if r.returncode == 0 and r.stdout.strip():
         return r.stdout.strip()

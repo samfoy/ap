@@ -37,7 +37,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Requires: Provider abstraction + AGENTS.md + stable non-interactive mode
     - Milestone: ap is the agent driving its own development loop
 
-4. [ ] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
+4. [~] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
 
 5. [x] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
     - Every `ap` invocation creates a named session immediately — name auto-generated from first user message (short slug, e.g. `refactor-auth-module-2026-03-22`)
@@ -50,7 +50,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - TUI: `s` key opens session browser overlay — scrollable list, preview pane, Enter to resume, `f` to fork
     - Remove the `--session` opt-in flag concept entirely — persistence is always on
 
-6. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
+6. [~] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
     - `/model <id>` command in TUI input switches active model immediately
     - `--model` CLI flag overrides config at startup
     - Model displayed in TUI status bar
