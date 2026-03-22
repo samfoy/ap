@@ -130,3 +130,13 @@ f481ae4 chore(monitor): complete Slack bot integration
 7ad12cb chore(monitor): complete Code review + aggressive refactor pass
 580d618 chore(monitor): complete Kiro provider
 8859c54 chore(monitor): start Slack bot integration
+
+## 2026-03-22 15:14 — LSP integration
+Review: No LSP code landed at all. The git log you shared shows work on **Streaming improvements**, **Semantic search**, and **Background process management/tmux sub-agents** — none of which is LSP. The LSP integration loop has only just been *started* (`160ba78 chore(monitor): start LSP integration`) and hasn't produced a merge commit yet, meaning it's either still in-flight or stalled. There are zero LSP-related files anywhere in `src/`.
+Commits:
+994a46d chore(monitor): complete Semantic search over sessions + directories
+4ea6c30 chore(monitor): complete Streaming improvements
+0f06a4b feat: merge Streaming improvements
+9f19504 chore(monitor): complete Background process management + tmux sub-agents
+fef8ab2 chore: auto-commit before merge (loop primary)
+0e3871d chore(monitor): start Semantic search over sessions + directories

@@ -111,3 +111,8 @@ The gap is total: `fastembed-rs` embeddings, the HNSW index, session recall, the
 [15:13:31] Ralph running for LSP integration
 [15:13:31] Starting: Image support
 [15:13:31] Created worktree: /Users/sam.painter/Projects/ap-worktrees/image-support (feature/image-support)
+[15:13:34] Ralph running for Image support
+[15:14:04] LOOP_COMPLETE: LSP integration
+[15:14:21] Review: No LSP code landed at all. The git log you shared shows work on **Streaming improvements**, **Semantic search**, and **Background process management/tmux sub-agents** — none of which is LSP. The LSP integration loop has only just been *started* (`160ba78 chore(monitor): start LSP integration`) and hasn't produced a merge commit yet, meaning it's either still in-flight or stalled. There are zero LSP-related files anywhere in `src/`.
+[15:14:21] Merging feature/lsp-integration into main...
+[15:14:22] Merged and cleaned up worktree for: LSP integration

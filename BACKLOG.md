@@ -123,7 +123,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
     - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
 
-13. [~] **LSP integration** — Connect to running language servers for code-aware context:
+13. [x] **LSP integration** — Connect to running language servers for code-aware context:
     - `lsp` built-in tool: `{ "op": "hover" | "definition" | "references" | "diagnostics" | "completion", "file": "...", "line": N, "col": N }`
     - ap spawns or connects to an existing LSP server based on project language, detected from cwd
     - Results injected as tool output

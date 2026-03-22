@@ -73,8 +73,6 @@ async fn run_headless(
     session_id: Option<String>,
     prompt: &str,
 ) -> anyhow::Result<()> {
-    use std::io::Write;
-
     // Build the Bedrock provider
     let provider = match BedrockProvider::new(
         config.provider.model.clone(),
@@ -161,32 +159,8 @@ async fn run_headless(
             }
         };
 
-    // Route events to stdout/stderr
-    let stdout = std::io::stdout();
-    let mut exit_code = 0i32;
-    for event in &events {
-        match event {
-            TurnEvent::TextChunk(text) => {
-                let mut out = stdout.lock();
-                out.write_all(text.as_bytes()).ok();
-                out.flush().ok();
-            }
-            TurnEvent::ToolStart { name, .. } => {
-                eprintln!("ap: tool: {name}");
-            }
-            TurnEvent::ToolComplete { .. } | TurnEvent::Usage { .. } => {
-                // ToolComplete: results shown in context; errors surfaced via Error event
-                // Usage: displayed in TUI status bar; headless mode ignores it
-            }
-            TurnEvent::TurnEnd => {
-                println!(); // final newline
-            }
-            TurnEvent::Error(msg) => {
-                eprintln!("ap: error: {msg}");
-                exit_code = 1;
-            }
-        }
-    }
+    // Route events to stdout/stderr; returns non-zero on error
+    let exit_code = route_headless_events(&events);
 
     // Save conversation if session was requested and turn succeeded
     if exit_code == 0 {
@@ -201,6 +175,33 @@ async fn run_headless(
         std::process::exit(exit_code);
     }
     Ok(())
+}
+
+/// Stream `events` to stdout/stderr and return an exit code (0 = success, 1 = error).
+fn route_headless_events(events: &[TurnEvent]) -> i32 {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut exit_code = 0i32;
+    for event in events {
+        match event {
+            TurnEvent::TextChunk(text) => {
+                let mut out = stdout.lock();
+                out.write_all(text.as_bytes()).ok();
+                out.flush().ok();
+            }
+            TurnEvent::ToolStart { name, .. } => eprintln!("ap: tool: {name}"),
+            TurnEvent::ToolComplete { .. } | TurnEvent::Usage { .. } => {
+                // ToolComplete: results shown in context; errors surfaced via Error event
+                // Usage: displayed in TUI status bar; headless mode ignores it
+            }
+            TurnEvent::TurnEnd => println!(),
+            TurnEvent::Error(msg) => {
+                eprintln!("ap: error: {msg}");
+                exit_code = 1;
+            }
+        }
+    }
+    exit_code
 }
 
 async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result<()> {
