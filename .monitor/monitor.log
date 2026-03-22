@@ -106,3 +106,5 @@ The BACKLOG item (`[~]`) confirms it's still in-progress: token-by-token TUI str
 The gap is total: `fastembed-rs` embeddings, the HNSW index, session recall, the `search` tool, incremental watching — none of it exists. The loop appears to have been interrupted or pivoted to the next task (Streaming improvements) before doing any real work on this one.
 [15:13:24] Merging feature/semantic-search-over-sessions-directorie into main...
 [15:13:25] Merged and cleaned up worktree for: Semantic search over sessions + directories
+[15:13:27] Starting: LSP integration
+[15:13:27] Created worktree: /Users/sam.painter/Projects/ap-worktrees/lsp-integration (feature/lsp-integration)
