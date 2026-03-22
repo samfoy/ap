@@ -86,7 +86,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
     **Reference:** ~/Projects/pi-provider-kiro/src/ — full TypeScript implementation to port from.
 
-8. [ ] **Code review + aggressive refactor pass** — Full codebase review and cleanup:
+8. [~] **Code review + aggressive refactor pass** — Full codebase review and cleanup:
     - Audit all public APIs for consistency (naming, error types, return conventions)
     - Identify and eliminate any remaining mutable state outside the turn pipeline
     - Dead code removal, unused dependencies pruned from Cargo.toml

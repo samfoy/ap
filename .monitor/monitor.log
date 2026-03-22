@@ -56,3 +56,6 @@ The gap is straightforward: the monitor picked up other backlog items (self-host
 [15:08:56] Conflict info saved to /Users/sam.painter/Projects/ap/.monitor/conflicts/model-switching.md. Skipping Model switching for now.
 [15:08:56] Starting: Kiro provider
 [15:08:56] Created worktree: /Users/sam.painter/Projects/ap-worktrees/kiro-provider (feature/kiro-provider)
+[15:08:59] Ralph running for Kiro provider
+[15:08:59] Starting: Code review + aggressive refactor pass
+[15:08:59] Created worktree: /Users/sam.painter/Projects/ap-worktrees/code-review-aggressive-refactor-pass (feature/code-review-aggressive-refactor-pass)
