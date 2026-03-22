@@ -534,3 +534,27 @@ Wave sequence:
 - Next: step-10 cleanup (delete extensions)
 - Then: step-11 non-interactive mode (original task-10)
 - Then: step-12 README (original task-11)
+
+## 2026-03-22 — Task 10: Remove Extensions System Complete
+
+Deleted src/extensions/ (mod.rs, rhai_loader.rs, dylib_loader.rs).
+Removed rhai + libloading from Cargo.toml.
+Removed ExtensionsConfig struct, extensions field from AppConfig, overlay logic, and stale test assertion.
+Removed pub mod extensions from lib.rs.
+Removed [extensions] section from ap.toml.example.
+
+Results: 77 tests pass (8 extension tests correctly gone), zero warnings, release build clean.
+Committed: fa9a7f6
+
+Remaining: task-11 non-interactive mode, task-12 README.
+
+## 2026-03-22 — Finalization: task-10-remove-extensions-cleanup closed
+
+review.passed received for task-1774191964-479c (pdd:ap-ai-coding-agent:step-10:remove-extensions-cleanup).
+Runtime task was already closed. Updated task-10-remove-extensions-cleanup.code-task.md to status: completed.
+
+Remaining pending code-tasks:
+- task-10-non-interactive-mode.code-task.md (pending)
+- task-11-readme.code-task.md (pending)
+
+Emitting queue.advance → Task Writer for task-11 non-interactive mode.
