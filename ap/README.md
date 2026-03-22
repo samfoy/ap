@@ -11,7 +11,7 @@ A terminal AI coding agent written in Rust. Powered by AWS Bedrock (Claude), wit
 - **Ratatui TUI** with conversation panel, live tool activity, and vim-style keybindings
 - **Non-interactive mode** (`-p`) for scripting and use by other agents
 - **Shell lifecycle hooks** — pre/post tool call, pre/post turn, on error
-- **Session persistence** — save and resume conversations by ID
+- **Session persistence** — opt-in save and resume of conversations via `--session <id>`
 - **Layered config** — global (`~/.ap/config.toml`) + project (`ap.toml`) with field-level merge
 
 ---
@@ -54,10 +54,10 @@ ap -p "read Cargo.toml and summarize it"
 ap
 ```
 
-**Resume a previous session:**
+**Start or resume a named session:**
 
 ```sh
-ap --session <session-id>
+ap --session my-project
 ```
 
 ---
@@ -245,24 +245,31 @@ fi
 
 ## Session Management
 
-`ap` automatically saves every conversation to `~/.ap/sessions/<session-id>.json`.
+Session persistence is **opt-in** — `ap` only saves conversation history when `--session <id>` is explicitly provided. Running `ap` without `--session` is ephemeral: nothing is written to disk.
 
-### Starting a new session
+### Starting a named session
 
 ```sh
-ap                          # generates a new UUID session ID
-ap -p "summarize README"    # non-interactive also creates a session
+ap --session my-project
+ap -p "summarize README" --session my-project
 ```
 
-The session ID is printed to stderr when a new session starts.
+Provide any string as the session ID. If `~/.ap/sessions/<id>.json` does not exist, a new session is created and saved there. If it already exists, the conversation history is loaded and the agent continues from where you left off.
 
 ### Resuming a session
 
 ```sh
-ap --session <session-id>
+ap --session my-project
 ```
 
-Previous messages are loaded and the agent continues the conversation from where you left off.
+Previous messages are loaded automatically. The agent picks up the conversation from the last saved state.
+
+### Ephemeral (no persistence)
+
+```sh
+ap                          # no --session flag → nothing is saved
+ap -p "one-off question"    # non-interactive without --session is also ephemeral
+```
 
 ### Session file format
 
