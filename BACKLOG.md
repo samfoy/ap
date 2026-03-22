@@ -25,13 +25,13 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 4. [~] **Richer TUI** — Syntax highlighted code blocks in conversation pane. Tool call details expandable (press `e` on a tool result to expand). Token count + cost display in status bar. Scrollback history preserved across turns. Input: multi-line with `Ctrl+Enter` to submit, `Enter` for newline.
 
-5. [ ] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal:
+5. [~] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal:
     - Markdown: headings, bold/italic, inline code, fenced code blocks with syntax highlighting, bullet lists, numbered lists, blockquotes — rendered via `termimad` or `pulldown-cmark` + custom ratatui renderer
     - Mermaid diagrams: detect fenced ` ```mermaid ` blocks, render as ASCII art in-terminal using `mermaid-cli` (`mmdc`) if available, or fall back to raw source with a `[diagram]` label
     - Toggle: `m` key switches between rendered and raw markdown view
     - Code blocks: language-aware syntax highlighting via `syntect` crate
 
-5. [ ] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
+5. [~] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
 
 6. [ ] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
