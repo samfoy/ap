@@ -88,6 +88,70 @@ impl BedrockProvider {
 
         body
     }
+    /// Parse a single Anthropic streaming SSE JSON object into zero or more
+    /// `StreamEvent`s, appending them to `out`.
+    ///
+    /// `in_tool_use` tracks whether the *current* content block was started as
+    /// a `tool_use` block.  `content_block_stop` fires for both text and
+    /// tool_use blocks, so we must only emit `ToolUseEnd` when this flag is
+    /// set, then clear it.
+    fn parse_sse_event(
+        v: &serde_json::Value,
+        in_tool_use: &mut bool,
+        out: &mut Vec<Result<StreamEvent, ProviderError>>,
+    ) {
+        match v["type"].as_str() {
+            Some("content_block_start") => {
+                let block = &v["content_block"];
+                if block["type"].as_str() == Some("tool_use") {
+                    *in_tool_use = true;
+                    let id = block["id"].as_str().unwrap_or_default().to_string();
+                    let name = block["name"].as_str().unwrap_or_default().to_string();
+                    out.push(Ok(StreamEvent::ToolUseStart { id, name }));
+                } else {
+                    // text block (or unknown) — not in tool_use
+                    *in_tool_use = false;
+                }
+            }
+            Some("content_block_delta") => {
+                let delta = &v["delta"];
+                match delta["type"].as_str() {
+                    Some("text_delta") => {
+                        if let Some(text) = delta["text"].as_str() {
+                            out.push(Ok(StreamEvent::TextDelta(text.to_string())));
+                        }
+                    }
+                    Some("input_json_delta") => {
+                        if let Some(frag) = delta["partial_json"].as_str() {
+                            out.push(Ok(StreamEvent::ToolUseParams(frag.to_string())));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Some("content_block_stop") => {
+                // Only emit ToolUseEnd when we were actually in a tool_use block.
+                if *in_tool_use {
+                    out.push(Ok(StreamEvent::ToolUseEnd));
+                    *in_tool_use = false;
+                }
+            }
+            Some("message_delta") => {
+                let stop_reason = v["delta"]["stop_reason"]
+                    .as_str()
+                    .unwrap_or("end_turn")
+                    .to_string();
+                let input_tokens = v["usage"]["input_tokens"].as_u64().unwrap_or(0) as u32;
+                let output_tokens = v["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
+                out.push(Ok(StreamEvent::TurnEnd {
+                    stop_reason,
+                    input_tokens,
+                    output_tokens,
+                }));
+            }
+            _ => {}
+        }
+    }
 }
 
 impl Provider for BedrockProvider {
@@ -126,6 +190,11 @@ impl Provider for BedrockProvider {
 
                 let mut events: Vec<Result<StreamEvent, ProviderError>> = Vec::new();
                 let mut stream = resp.body;
+                // Track whether the current content block is a tool_use block.
+                // content_block_stop fires for ALL block types (text and tool_use),
+                // so we must only emit ToolUseEnd when we are actually in a tool_use
+                // block.
+                let mut in_tool_use = false;
 
                 // Parse streaming Server-Sent Events from Bedrock.
                 // Anthropic streaming events:
@@ -156,65 +225,7 @@ impl Provider for BedrockProvider {
                             }
                         };
 
-                        match v["type"].as_str() {
-                            Some("content_block_start") => {
-                                let block = &v["content_block"];
-                                if block["type"].as_str() == Some("tool_use") {
-                                    let id = block["id"]
-                                        .as_str()
-                                        .unwrap_or_default()
-                                        .to_string();
-                                    let name = block["name"]
-                                        .as_str()
-                                        .unwrap_or_default()
-                                        .to_string();
-                                    events.push(Ok(StreamEvent::ToolUseStart { id, name }));
-                                }
-                            }
-                            Some("content_block_delta") => {
-                                let delta = &v["delta"];
-                                match delta["type"].as_str() {
-                                    Some("text_delta") => {
-                                        if let Some(text) = delta["text"].as_str() {
-                                            events.push(Ok(StreamEvent::TextDelta(
-                                                text.to_string(),
-                                            )));
-                                        }
-                                    }
-                                    Some("input_json_delta") => {
-                                        if let Some(frag) =
-                                            delta["partial_json"].as_str()
-                                        {
-                                            events.push(Ok(StreamEvent::ToolUseParams(
-                                                frag.to_string(),
-                                            )));
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Some("content_block_stop") => {
-                                events.push(Ok(StreamEvent::ToolUseEnd));
-                            }
-                            Some("message_delta") => {
-                                let stop_reason = v["delta"]["stop_reason"]
-                                    .as_str()
-                                    .unwrap_or("end_turn")
-                                    .to_string();
-                                let input_tokens = v["usage"]["input_tokens"]
-                                    .as_u64()
-                                    .unwrap_or(0) as u32;
-                                let output_tokens = v["usage"]["output_tokens"]
-                                    .as_u64()
-                                    .unwrap_or(0) as u32;
-                                events.push(Ok(StreamEvent::TurnEnd {
-                                    stop_reason,
-                                    input_tokens,
-                                    output_tokens,
-                                }));
-                            }
-                            _ => {}
-                        }
+                        Self::parse_sse_event(&v, &mut in_tool_use, &mut events);
                     }
                 }
 
@@ -235,6 +246,123 @@ impl Provider for BedrockProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // parse_sse_event unit tests (RED → GREEN)
+    // -----------------------------------------------------------------------
+
+    fn parse(v: serde_json::Value, in_tool_use: &mut bool) -> Vec<StreamEvent> {
+        let mut out: Vec<Result<StreamEvent, ProviderError>> = Vec::new();
+        BedrockProvider::parse_sse_event(&v, in_tool_use, &mut out);
+        out.into_iter().map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn test_content_block_stop_after_text_block_no_tool_use_end() {
+        // A plain text response: content_block_start (text) → content_block_stop
+        // must NOT emit ToolUseEnd.
+        let mut in_tool_use = false;
+
+        let start = json!({"type": "content_block_start", "index": 0,
+                           "content_block": {"type": "text"}});
+        let stop = json!({"type": "content_block_stop", "index": 0});
+
+        let evts = parse(start, &mut in_tool_use);
+        assert!(evts.is_empty(), "text block_start should produce no events");
+        assert!(!in_tool_use, "in_tool_use should be false after text block_start");
+
+        let evts = parse(stop, &mut in_tool_use);
+        assert!(
+            evts.is_empty(),
+            "content_block_stop after text block must NOT emit ToolUseEnd, got: {:?}",
+            evts
+        );
+        assert!(!in_tool_use);
+    }
+
+    #[test]
+    fn test_content_block_stop_after_tool_use_block_emits_tool_use_end() {
+        // A tool_use block: content_block_start (tool_use) → content_block_stop
+        // MUST emit ToolUseEnd exactly once.
+        let mut in_tool_use = false;
+
+        let start = json!({
+            "type": "content_block_start", "index": 0,
+            "content_block": {"type": "tool_use", "id": "call_1", "name": "bash"}
+        });
+        let stop = json!({"type": "content_block_stop", "index": 0});
+
+        let evts = parse(start, &mut in_tool_use);
+        assert_eq!(evts.len(), 1);
+        assert!(matches!(&evts[0], StreamEvent::ToolUseStart { id, name }
+            if id == "call_1" && name == "bash"));
+        assert!(in_tool_use, "in_tool_use must be true after tool_use block_start");
+
+        let evts = parse(stop, &mut in_tool_use);
+        assert_eq!(evts.len(), 1, "content_block_stop after tool_use must emit ToolUseEnd");
+        assert!(matches!(evts[0], StreamEvent::ToolUseEnd));
+        assert!(!in_tool_use, "in_tool_use must be reset after block_stop");
+    }
+
+    #[test]
+    fn test_in_tool_use_resets_after_stop() {
+        // After a tool_use block closes, the next content_block_stop (for a text
+        // block) must not emit ToolUseEnd.
+        let mut in_tool_use = false;
+
+        let tool_start = json!({
+            "type": "content_block_start", "index": 0,
+            "content_block": {"type": "tool_use", "id": "t1", "name": "read"}
+        });
+        let tool_stop = json!({"type": "content_block_stop", "index": 0});
+        let text_start = json!({"type": "content_block_start", "index": 1,
+                                "content_block": {"type": "text"}});
+        let text_stop = json!({"type": "content_block_stop", "index": 1});
+
+        parse(tool_start, &mut in_tool_use);
+        parse(tool_stop, &mut in_tool_use); // resets in_tool_use to false
+        parse(text_start, &mut in_tool_use);
+        let evts = parse(text_stop, &mut in_tool_use);
+        assert!(evts.is_empty(), "second block_stop (text) must not emit ToolUseEnd");
+    }
+
+    #[test]
+    fn test_text_delta_event() {
+        let mut in_tool_use = false;
+        let v = json!({"type": "content_block_delta", "index": 0,
+                       "delta": {"type": "text_delta", "text": "hello"}});
+        let evts = parse(v, &mut in_tool_use);
+        assert_eq!(evts.len(), 1);
+        assert!(matches!(&evts[0], StreamEvent::TextDelta(t) if t == "hello"));
+    }
+
+    #[test]
+    fn test_input_json_delta_event() {
+        let mut in_tool_use = true;
+        let v = json!({"type": "content_block_delta", "index": 0,
+                       "delta": {"type": "input_json_delta", "partial_json": "{\"cmd\":"}});
+        let evts = parse(v, &mut in_tool_use);
+        assert_eq!(evts.len(), 1);
+        assert!(matches!(&evts[0], StreamEvent::ToolUseParams(s) if s == "{\"cmd\":"));
+    }
+
+    #[test]
+    fn test_message_delta_event() {
+        let mut in_tool_use = false;
+        let v = json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "tool_use"},
+            "usage": {"input_tokens": 100, "output_tokens": 50}
+        });
+        let evts = parse(v, &mut in_tool_use);
+        assert_eq!(evts.len(), 1);
+        assert!(matches!(&evts[0], StreamEvent::TurnEnd { stop_reason, input_tokens, output_tokens }
+            if stop_reason == "tool_use" && *input_tokens == 100 && *output_tokens == 50));
+    }
+
+    // -----------------------------------------------------------------------
+    // Existing tests
+    // -----------------------------------------------------------------------
 
     #[tokio::test]
     async fn test_bedrock_provider_constructs_without_panic() {
