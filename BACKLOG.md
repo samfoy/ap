@@ -35,9 +35,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 9. [ ] **Session management UX** — `ap sessions` command lists recent sessions with summaries. `ap --resume` picks up the most recent session automatically. Session names: auto-generated from first message.
 
-10. [ ] **MCP support** — Connect to Model Context Protocol servers for tool discovery. `[mcp] servers = ["filesystem", "github"]` in config. Tools from MCP appear alongside built-ins.
-
-11. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
+10. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
     - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
     - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
     - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
