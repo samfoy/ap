@@ -1,0 +1,10 @@
+# Ralph Orchestrator Configuration — ap project
+# Docs: https://github.com/mikeyobrien/ralph-orchestrator
+
+cli:
+  backend: "pi"
+
+event_loop:
+  prompt_file: "PROMPT.md"
+  completion_promise: "LOOP_COMPLETE"
+  # No iteration or runtime limits — monitor agent will adjust if needed
