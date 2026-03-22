@@ -92,24 +92,69 @@ async fn headless_receives_text_chunk_and_turn_end() {
     assert!(!has_error, "Unexpected Error event, got: {:?}", events);
 }
 
+// ─── MockErrorProvider: returns a ProviderError in the stream ────────────────
+
+struct MockErrorProvider {
+    message: String,
+}
+
+impl MockErrorProvider {
+    fn new(message: impl Into<String>) -> Self {
+        Self { message: message.into() }
+    }
+}
+
+impl Provider for MockErrorProvider {
+    fn stream_completion<'a>(
+        &'a self,
+        _messages: &'a [Message],
+        _tools: &'a [serde_json::Value],
+    ) -> BoxStream<'a, Result<StreamEvent, ProviderError>> {
+        let err = ProviderError::Aws(self.message.clone());
+        Box::pin(stream::iter(vec![Err(err)]))
+    }
+}
+
 // ─── Test: Error event on provider failure ────────────────────────────────────
 
 #[tokio::test]
 async fn headless_emits_error_on_provider_failure() {
-    // Provider that returns an error immediately
-    let provider = Arc::new(MockProvider::new(vec![vec![
-        // No TurnEnd — agent loop should handle incomplete stream gracefully
-        // We'll test the Error path by simulating a run_turn failure scenario
-        // via an empty script (no events → loop ends without TurnEnd)
-        // The current AgentLoop sends TurnEnd at end regardless, so we just
-        // verify the success path with no error.
-    ]]));
+    // AC3: Given a provider that returns an error, UiEvent::Error is emitted
+    // and run_turn returns Err.
+    let provider = Arc::new(MockErrorProvider::new("something failed"));
 
-    let events = run_headless("test", provider).await;
+    let (tx, mut rx) = mpsc::channel(64);
+    let mut agent = AgentLoop::new(
+        provider as Arc<dyn Provider>,
+        ToolRegistry::with_defaults(),
+        HookRunner::new(HooksConfig::default()),
+        tx,
+    );
 
-    // Empty stream → agent should still emit TurnEnd (not crash)
+    let result = agent.run_turn("test".to_string()).await;
+    drop(agent); // close the sender so rx drains
+
+    // Collect all events
+    let mut events = Vec::new();
+    while let Some(event) = rx.recv().await {
+        events.push(event);
+    }
+
+    // run_turn must return Err when the stream produces a ProviderError
+    assert!(result.is_err(), "Expected run_turn to return Err on provider failure");
+
+    // UiEvent::Error must be emitted before run_turn returns
     let has_error = events.iter().any(|e| matches!(e, UiEvent::Error(_)));
-    assert!(!has_error, "Should not emit Error for empty stream, got: {:?}", events);
+    assert!(has_error, "Expected UiEvent::Error event, got: {:?}", events);
+
+    // The error message should contain our injected message
+    let error_msg = events.iter().find_map(|e| {
+        if let UiEvent::Error(msg) = e { Some(msg.as_str()) } else { None }
+    });
+    assert!(
+        error_msg.map(|m| m.contains("something failed")).unwrap_or(false),
+        "Expected error to contain 'something failed', got: {:?}", error_msg
+    );
 }
 
 // ─── Test: -p flag argument parsing ──────────────────────────────────────────

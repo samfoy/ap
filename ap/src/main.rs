@@ -131,9 +131,16 @@ async fn run_headless(
     }
 
     // Wait for agent task to complete
-    if let Err(e) = agent_handle.await {
-        eprintln!("ap: agent task panicked: {e}");
-        exit_code = 1;
+    match agent_handle.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            eprintln!("ap: error: {e}");
+            exit_code = 1;
+        }
+        Err(e) => {
+            eprintln!("ap: agent task panicked: {e}");
+            exit_code = 1;
+        }
     }
 
     if exit_code != 0 {

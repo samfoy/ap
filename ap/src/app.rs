@@ -171,7 +171,15 @@ impl AgentLoop {
 
             // Consume the streaming response
             while let Some(event) = stream.next().await {
-                match event? {
+                let event = match event {
+                    Ok(e) => e,
+                    Err(e) => {
+                        let msg = e.to_string();
+                        self.emit(UiEvent::Error(msg.clone())).await;
+                        return Err(anyhow::anyhow!(msg));
+                    }
+                };
+                match event {
                     StreamEvent::TextDelta(text) => {
                         self.emit(UiEvent::TextChunk(text.clone())).await;
                         assistant_text.push_str(&text);
