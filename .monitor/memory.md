@@ -106,3 +106,15 @@ f481ae4 chore(monitor): complete Slack bot integration
 8859c54 chore(monitor): start Slack bot integration
 2952082 chore(monitor): start Code review + aggressive refactor pass
 e8a1520 chore(monitor): start Kiro provider
+
+## 2026-03-22 15:13 — Streaming improvements
+Review: **It didn't land.** The commits you listed are entirely unrelated to Streaming improvements — they cover Kiro provider, code review/refactor, Slack bot, and background process management. The "Streaming improvements" task only has a `start` monitor commit (`6d74a18`) with zero source changes (just `.monitor/` bookkeeping), and no corresponding `complete` commit exists anywhere in the log.
+
+The BACKLOG item (`[~]`) confirms it's still in-progress: token-by-token TUI streaming and `Ctrl+C` interrupt are both unimplemented. No gap in the *other* work — those features landed cleanly — but the stated goal of this session was never touched.
+Commits:
+fef8ab2 chore: auto-commit before merge (loop primary)
+e42f093 chore(monitor): start Background process management + tmux sub-agents
+f481ae4 chore(monitor): complete Slack bot integration
+7ad12cb chore(monitor): complete Code review + aggressive refactor pass
+580d618 chore(monitor): complete Kiro provider
+8859c54 chore(monitor): start Slack bot integration

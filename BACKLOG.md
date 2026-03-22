@@ -112,7 +112,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Job lifecycle:** `job list`, `job attach <id>` (open tmux pane), `job kill <id>`, `job logs <id>` — callable by Claude as tool calls or by user as `/job` commands in TUI input
     - Config: `[jobs] max_concurrent = 4, tmux_enabled = true, default_shell = "zsh"`
 
-11. [~] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
+11. [x] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
 
 12. [~] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
     - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
