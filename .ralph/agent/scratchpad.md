@@ -367,3 +367,13 @@ Checked current state — task is already in_progress with complete implementati
 - All 40 tests pass, zero warnings, `cargo build --release` clean
 
 Emitting review.ready for Fresh-Eyes Critic.
+
+## 2026-03-22 — Task 05: Hooks System Complete
+
+Implemented `ap/src/hooks/mod.rs` and `ap/src/hooks/runner.rs`:
+- `HookOutcome` enum: Proceed, Cancelled, Transformed, Observed, HookWarning
+- `HookRunner::run_pre_tool_call`: exit 0 → Proceed, non-zero → Cancelled(stderr), missing path → HookWarning
+- `HookRunner::run_post_tool_call`: non-empty stdout → Transformed, empty stdout → Observed, non-zero → HookWarning
+- `HookRunner::run_observer_hook`: non-cancellable; uses NamedTempFile for AP_MESSAGES_FILE payload
+- 6 unit tests, all pass; 46 total tests pass; zero warnings
+- Committed: 8245fab
