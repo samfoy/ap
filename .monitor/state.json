@@ -1,1 +1,7 @@
-{}
+{
+  "Background process management + tmux sub-agents": {
+    "wt": "/Users/sam.painter/Projects/ap-worktrees/background-process-management-tmux-sub-a",
+    "started_at": 1774217477.322274,
+    "last_restart_at": 0
+  }
+}

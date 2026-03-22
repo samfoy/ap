@@ -81,3 +81,6 @@ The gap is straightforward: the monitor picked up other backlog items (self-host
 [15:11:11] Merged and cleaned up worktree for: Slack bot integration
 [15:11:14] Starting: Background process management + tmux sub-agents
 [15:11:14] Created worktree: /Users/sam.painter/Projects/ap-worktrees/background-process-management-tmux-sub-a (feature/background-process-management-tmux-sub-a)
+[15:11:17] Ralph running for Background process management + tmux sub-agents
+[15:11:17] Starting: Streaming improvements
+[15:11:17] Created worktree: /Users/sam.painter/Projects/ap-worktrees/streaming-improvements (feature/streaming-improvements)
