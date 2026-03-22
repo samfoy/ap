@@ -127,7 +127,8 @@ async fn turn_loop(
                     }
                 }
 
-                StreamEvent::TurnEnd { .. } => {
+                StreamEvent::TurnEnd { input_tokens, output_tokens, .. } => {
+                    all_events.push(TurnEvent::Usage { input_tokens, output_tokens });
                     conv = apply_post_turn(conv, middleware);
                     break;
                 }
@@ -202,6 +203,7 @@ async fn turn_loop(
             all_events.push(TurnEvent::ToolComplete {
                 name: call.name.clone(),
                 result: exec_result.content.clone(),
+                is_error: exec_result.is_error,
             });
 
             tool_results.push(MessageContent::ToolResult {
@@ -631,6 +633,41 @@ mod tests {
         assert!(
             events.iter().any(|e| matches!(e, TurnEvent::TurnEnd)),
             "expected TurnEnd"
+        );
+    }
+
+    // ── AC-3: Usage event carries correct token counts ────────────────────────
+
+    #[tokio::test]
+    async fn turn_emits_usage_with_token_counts() {
+        let provider = MockProvider::new(vec![vec![
+            StreamEvent::TextDelta("hi".to_string()),
+            StreamEvent::TurnEnd {
+                stop_reason: "end_turn".to_string(),
+                input_tokens: 42,
+                output_tokens: 7,
+            },
+        ]]);
+
+        let tools = ToolRegistry::new();
+        let middleware = Middleware::default();
+
+        let (_, events) = turn(make_conv(), &provider, &tools, &middleware)
+            .await
+            .expect("turn should succeed");
+
+        let usage = events.iter().find_map(|e| {
+            if let TurnEvent::Usage { input_tokens, output_tokens } = e {
+                Some((*input_tokens, *output_tokens))
+            } else {
+                None
+            }
+        });
+
+        assert_eq!(
+            usage,
+            Some((42, 7)),
+            "turn() must emit TurnEvent::Usage with the provider's token counts"
         );
     }
 }

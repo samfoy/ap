@@ -30,6 +30,94 @@ use crate::types::{Conversation, Middleware, TurnEvent};
 pub mod events;
 pub mod ui;
 
+// ─── ChatBlock / ChatEntry ────────────────────────────────────────────────────
+
+/// A single block inside an assistant message — either prose or a fenced code
+/// block.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChatBlock {
+    /// Plain prose text.
+    Text(String),
+    /// A fenced code block with an optional language tag.
+    Code {
+        /// Language hint from the opening fence (e.g. `"rust"`, `""`).
+        lang: String,
+        /// Raw content of the code block.
+        content: String,
+    },
+}
+
+/// A single entry in the conversation history.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChatEntry {
+    /// Text submitted by the user.
+    User(String),
+    /// Assistant message that is still streaming — holds the raw accumulated
+    /// text so far.
+    AssistantStreaming(String),
+    /// Assistant message that has finished streaming — parsed into blocks.
+    AssistantDone(Vec<ChatBlock>),
+}
+
+/// Parse a raw text string into a sequence of [`ChatBlock`]s by scanning for
+/// Markdown-style fenced code blocks (triple backticks).
+///
+/// Rules:
+/// - Empty input → empty `Vec`.
+/// - No fence → `[Text(full_text)]`.
+/// - ` ```lang ` opens a code block; ` ``` ` closes it; remaining text after
+///   the close becomes another text/code block as normal.
+/// - Unclosed fence → the remaining content is returned as a `Code` block.
+pub fn parse_chat_blocks(text: &str) -> Vec<ChatBlock> {
+    if text.is_empty() {
+        return vec![];
+    }
+
+    let mut blocks: Vec<ChatBlock> = Vec::new();
+    let mut current_text = String::new();
+    let mut in_code = false;
+    let mut code_content = String::new();
+    let mut code_lang = String::new();
+
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("```") {
+            if !in_code {
+                // Opening fence — flush accumulated text first
+                if !current_text.is_empty() {
+                    blocks.push(ChatBlock::Text(std::mem::take(&mut current_text)));
+                }
+                code_lang = rest.trim().to_string();
+                in_code = true;
+            } else {
+                // Closing fence — emit code block
+                blocks.push(ChatBlock::Code {
+                    lang: std::mem::take(&mut code_lang),
+                    content: std::mem::take(&mut code_content),
+                });
+                in_code = false;
+            }
+        } else if in_code {
+            code_content.push_str(line);
+            code_content.push('\n');
+        } else {
+            current_text.push_str(line);
+            current_text.push('\n');
+        }
+    }
+
+    // Flush remaining content
+    if in_code {
+        blocks.push(ChatBlock::Code {
+            lang: code_lang,
+            content: code_content,
+        });
+    } else if !current_text.is_empty() {
+        blocks.push(ChatBlock::Text(current_text));
+    }
+
+    blocks
+}
+
 // ─── AppMode ──────────────────────────────────────────────────────────────────
 
 /// Modal input state — mirrors a minimal vim-style mode system.
@@ -39,6 +127,22 @@ pub enum AppMode {
     Normal,
     /// Typing mode — characters go to the input buffer.
     Insert,
+}
+
+// ─── ToolEntry ────────────────────────────────────────────────────────────────
+
+/// Structured representation of a single tool invocation for the tools panel.
+pub struct ToolEntry {
+    /// Tool name (e.g. `"bash"`, `"read"`).
+    pub name: String,
+    /// Tool params serialised as a compact JSON string.
+    pub params: String,
+    /// Tool result once the call has completed; `None` while running.
+    pub result: Option<String>,
+    /// Whether the tool returned an error result.
+    pub is_error: bool,
+    /// Whether the entry is expanded in the panel (shows full params/result).
+    pub expanded: bool,
 }
 
 // ─── TuiApp ───────────────────────────────────────────────────────────────────
@@ -53,17 +157,27 @@ pub struct TuiApp {
     /// Current input mode.
     pub mode: AppMode,
 
-    /// Streamed assistant text chunks; each string is a chunk.
-    pub messages: Vec<String>,
+    /// Structured conversation history.
+    pub chat_history: Vec<ChatEntry>,
 
-    /// Tool activity entries for the right-hand panel.
-    pub tool_events: Vec<String>,
+    /// Structured tool activity entries for the right-hand panel.
+    pub tool_entries: Vec<ToolEntry>,
+
+    /// Index of the currently selected tool entry, if any.
+    pub selected_tool: Option<usize>,
 
     /// Live input buffer (what the user is currently typing).
     pub input_buffer: String,
 
     /// How many lines the conversation pane is scrolled down.
     pub scroll_offset: usize,
+
+    /// Whether the conversation pane is pinned to the bottom (auto-scrolls).
+    ///
+    /// `true` on startup and whenever the user presses `G`.  Pressing `j` or
+    /// `k` sets it to `false` so the user can freely scroll without being
+    /// snapped back on every new chunk.
+    pub scroll_pinned: bool,
 
     /// Whether the help overlay is visible.
     pub show_help: bool,
@@ -76,6 +190,12 @@ pub struct TuiApp {
 
     /// Whether a turn is in progress (disables submit).
     pub is_waiting: bool,
+
+    /// Accumulated input token count across all turns.
+    pub total_input_tokens: u32,
+
+    /// Accumulated output token count across all turns.
+    pub total_output_tokens: u32,
 
     /// Sender side of the UI event channel (for the spawned turn task).
     ui_tx: mpsc::Sender<TurnEvent>,
@@ -110,14 +230,18 @@ impl TuiApp {
         let (ui_tx, ui_rx) = mpsc::channel(256);
         Ok(Self {
             mode: AppMode::Normal,
-            messages: Vec::new(),
-            tool_events: Vec::new(),
+            chat_history: Vec::new(),
+            tool_entries: Vec::new(),
+            selected_tool: None,
             input_buffer: String::new(),
             scroll_offset: 0,
+            scroll_pinned: true,
             show_help: false,
             model_name,
             conversation_messages: 0,
             is_waiting: false,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
             ui_tx,
             ui_rx: Some(ui_rx),
             conv,
@@ -154,14 +278,18 @@ impl TuiApp {
 
         Self {
             mode: AppMode::Normal,
-            messages: Vec::new(),
-            tool_events: Vec::new(),
+            chat_history: Vec::new(),
+            tool_entries: Vec::new(),
+            selected_tool: None,
             input_buffer: String::new(),
             scroll_offset: 0,
+            scroll_pinned: true,
             show_help: false,
             model_name: "test-model".to_string(),
             conversation_messages: 0,
             is_waiting: false,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
             ui_tx,
             ui_rx: Some(ui_rx),
             conv,
@@ -263,8 +391,8 @@ impl TuiApp {
             return;
         }
 
-        // Echo the user message into the messages pane
-        self.messages.push(format!("\n[You] {trimmed}\n"));
+        // Echo the user message into the conversation pane
+        self.chat_history.push(ChatEntry::User(trimmed.clone()));
         self.is_waiting = true;
 
         // Clone Arc handles for the spawned task
@@ -297,32 +425,72 @@ impl TuiApp {
     pub fn handle_ui_event(&mut self, event: TurnEvent) {
         match event {
             TurnEvent::TextChunk(text) => {
-                // Append to the last entry (streaming)
-                if let Some(last) = self.messages.last_mut() {
-                    last.push_str(&text);
+                // Append to last AssistantStreaming entry, or push a new one
+                if let Some(ChatEntry::AssistantStreaming(buf)) = self.chat_history.last_mut() {
+                    buf.push_str(&text);
                 } else {
-                    self.messages.push(text);
+                    self.chat_history.push(ChatEntry::AssistantStreaming(text));
+                }
+                // Auto-scroll to bottom when pinned
+                if self.scroll_pinned {
+                    self.scroll_offset = usize::MAX;
                 }
             }
             TurnEvent::ToolStart { name, params } => {
-                self.tool_events.push(format!("⟳ {name}({})", params));
+                let params_str = params.to_string();
+                self.tool_entries.push(ToolEntry {
+                    name,
+                    params: params_str,
+                    result: None,
+                    is_error: false,
+                    expanded: false,
+                });
+                // Auto-select the new entry
+                self.selected_tool = Some(self.tool_entries.len() - 1);
+                // Auto-scroll to bottom when pinned
+                if self.scroll_pinned {
+                    self.scroll_offset = usize::MAX;
+                }
             }
-            TurnEvent::ToolComplete { name, result } => {
-                // result is a String in the new TurnEvent — derive icon from content
-                let icon = if result.starts_with("error") || result.contains("blocked") {
-                    "✗"
-                } else {
-                    "✓"
-                };
-                self.tool_events.push(format!("{icon} {name}"));
+            TurnEvent::ToolComplete { name, result, is_error } => {
+                // Fill result on the last matching entry with result=None
+                if let Some(entry) = self
+                    .tool_entries
+                    .iter_mut()
+                    .rev()
+                    .find(|e| e.name == name && e.result.is_none())
+                {
+                    entry.result = Some(result);
+                    entry.is_error = is_error;
+                }
+                // Auto-scroll to bottom when pinned
+                if self.scroll_pinned {
+                    self.scroll_offset = usize::MAX;
+                }
             }
             TurnEvent::TurnEnd => {
-                self.messages.push("\n".to_string());
+                // Convert last AssistantStreaming into AssistantDone
+                if let Some(entry) = self.chat_history.last_mut() {
+                    if let ChatEntry::AssistantStreaming(text) = entry.clone() {
+                        let blocks = parse_chat_blocks(&text);
+                        *entry = ChatEntry::AssistantDone(blocks);
+                    }
+                }
                 self.conversation_messages += 1;
                 self.is_waiting = false;
+                // TurnEnd finalises content — auto-scroll when pinned
+                if self.scroll_pinned {
+                    self.scroll_offset = usize::MAX;
+                }
+            }
+            TurnEvent::Usage { input_tokens, output_tokens } => {
+                self.total_input_tokens += input_tokens;
+                self.total_output_tokens += output_tokens;
             }
             TurnEvent::Error(e) => {
-                self.messages.push(format!("\n[Error] {e}\n"));
+                self.chat_history.push(ChatEntry::AssistantDone(vec![ChatBlock::Text(
+                    format!("\n[Error] {e}\n"),
+                )]));
                 self.is_waiting = false;
             }
         }
@@ -349,10 +517,12 @@ mod tests {
     fn headless_app_starts_in_normal_mode() {
         let app = TuiApp::headless();
         assert_eq!(app.mode, AppMode::Normal);
-        assert!(app.messages.is_empty());
-        assert!(app.tool_events.is_empty());
+        assert!(app.chat_history.is_empty());
+        assert!(app.tool_entries.is_empty());
+        assert!(app.selected_tool.is_none());
         assert!(app.input_buffer.is_empty());
         assert_eq!(app.scroll_offset, 0);
+        assert!(app.scroll_pinned);
         assert!(!app.show_help);
         assert!(!app.is_waiting);
     }
@@ -363,8 +533,11 @@ mod tests {
         app.handle_ui_event(TurnEvent::TextChunk("Hello ".to_string()));
         app.handle_ui_event(TurnEvent::TextChunk("world".to_string()));
         // Two chunks — second appended to first entry (streaming)
-        assert_eq!(app.messages.len(), 1);
-        assert_eq!(app.messages[0], "Hello world");
+        assert_eq!(app.chat_history.len(), 1);
+        assert_eq!(
+            app.chat_history[0],
+            ChatEntry::AssistantStreaming("Hello world".to_string())
+        );
     }
 
     #[test]
@@ -374,30 +547,40 @@ mod tests {
             name: "bash".to_string(),
             params: serde_json::json!({"command": "ls"}),
         });
-        assert_eq!(app.tool_events.len(), 1);
-        assert!(app.tool_events[0].contains("bash"));
+        assert_eq!(app.tool_entries.len(), 1);
+        assert!(app.tool_entries[0].name.contains("bash"));
     }
 
     #[test]
     fn handle_ui_event_tool_complete_ok_logged() {
         let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "read".to_string(),
+            params: serde_json::json!({}),
+        });
         app.handle_ui_event(TurnEvent::ToolComplete {
             name: "read".to_string(),
             result: "file contents".to_string(),
+            is_error: false,
         });
-        assert_eq!(app.tool_events.len(), 1);
-        assert!(app.tool_events[0].contains("✓"));
-        assert!(app.tool_events[0].contains("read"));
+        assert_eq!(app.tool_entries.len(), 1);
+        assert!(!app.tool_entries[0].is_error);
+        assert_eq!(app.tool_entries[0].result, Some("file contents".to_string()));
     }
 
     #[test]
     fn handle_ui_event_tool_complete_err_logged() {
         let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "bash".to_string(),
+            params: serde_json::json!({}),
+        });
         app.handle_ui_event(TurnEvent::ToolComplete {
             name: "bash".to_string(),
             result: "error: something went wrong".to_string(),
+            is_error: true,
         });
-        assert!(app.tool_events[0].contains("✗"));
+        assert!(app.tool_entries[0].is_error);
     }
 
     #[test]
@@ -413,8 +596,18 @@ mod tests {
     fn handle_ui_event_error_logged_to_messages() {
         let mut app = TuiApp::headless();
         app.handle_ui_event(TurnEvent::Error("oops".to_string()));
-        assert!(!app.messages.is_empty());
-        assert!(app.messages[0].contains("oops"));
+        assert!(!app.chat_history.is_empty());
+        // Error becomes an AssistantDone entry with the error text
+        match &app.chat_history[0] {
+            ChatEntry::AssistantDone(blocks) => {
+                let text = match &blocks[0] {
+                    ChatBlock::Text(s) => s.clone(),
+                    _ => panic!("expected Text block"),
+                };
+                assert!(text.contains("oops"));
+            }
+            _ => panic!("expected AssistantDone"),
+        }
         assert!(!app.is_waiting);
     }
 
@@ -424,5 +617,269 @@ mod tests {
         app.is_waiting = true;
         app.handle_ui_event(TurnEvent::TurnEnd);
         assert!(!app.is_waiting, "TurnEnd should clear is_waiting");
+    }
+
+    #[test]
+    fn handle_ui_event_usage_accumulates() {
+        let mut app = TuiApp::headless();
+        assert_eq!(app.total_input_tokens, 0);
+        assert_eq!(app.total_output_tokens, 0);
+
+        app.handle_ui_event(TurnEvent::Usage { input_tokens: 100, output_tokens: 200 });
+        app.handle_ui_event(TurnEvent::Usage { input_tokens: 100, output_tokens: 200 });
+
+        assert_eq!(app.total_input_tokens, 200);
+        assert_eq!(app.total_output_tokens, 400);
+    }
+
+    #[test]
+    fn status_bar_cost_format() {
+        // 1000 input @ $3/M + 2000 output @ $15/M = $0.0030 + $0.0300 = $0.0330
+        let cost = (1000_f64 / 1_000_000.0) * 3.00 + (2000_f64 / 1_000_000.0) * 15.00;
+        assert_eq!(format!("${:.4}", cost), "$0.0330");
+    }
+
+    // ─── Step 3: Structured ToolEntry tests ──────────────────────────────────
+
+    #[test]
+    fn tool_entry_start_creates_running_entry() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "read".to_string(),
+            params: serde_json::json!({}),
+        });
+        assert_eq!(app.tool_entries.len(), 1);
+        let entry = &app.tool_entries[0];
+        assert_eq!(entry.name, "read");
+        assert_eq!(entry.params, "{}");
+        assert!(entry.result.is_none());
+        assert!(!entry.is_error);
+        assert!(!entry.expanded);
+    }
+
+    #[test]
+    fn tool_entry_complete_fills_result() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "read".to_string(),
+            params: serde_json::json!({}),
+        });
+        app.handle_ui_event(TurnEvent::ToolComplete {
+            name: "read".to_string(),
+            result: "contents".to_string(),
+            is_error: false,
+        });
+        let entry = &app.tool_entries[0];
+        assert_eq!(entry.result, Some("contents".to_string()));
+        assert!(!entry.is_error);
+    }
+
+    #[test]
+    fn tool_entry_is_error_from_turn_event() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "bash".to_string(),
+            params: serde_json::json!({}),
+        });
+        app.handle_ui_event(TurnEvent::ToolComplete {
+            name: "bash".to_string(),
+            result: "error msg".to_string(),
+            is_error: true,
+        });
+        let entry = &app.tool_entries[0];
+        assert!(entry.is_error);
+    }
+
+    #[test]
+    fn tool_entry_expand_toggle() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "bash".to_string(),
+            params: serde_json::json!({}),
+        });
+        app.selected_tool = Some(0);
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        events::handle_key_event(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE), &mut app);
+        assert!(app.tool_entries[0].expanded);
+        // toggle again
+        events::handle_key_event(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE), &mut app);
+        assert!(!app.tool_entries[0].expanded);
+    }
+
+    #[test]
+    fn tool_selection_bracket_keys() {
+        let mut app = TuiApp::headless();
+        for name in ["a", "b", "c"] {
+            app.handle_ui_event(TurnEvent::ToolStart {
+                name: name.to_string(),
+                params: serde_json::json!({}),
+            });
+        }
+        app.selected_tool = Some(1);
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        events::handle_key_event(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE), &mut app);
+        assert_eq!(app.selected_tool, Some(2));
+        // At end: ] stays at last
+        events::handle_key_event(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE), &mut app);
+        assert_eq!(app.selected_tool, Some(2));
+        // [ moves back
+        events::handle_key_event(KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE), &mut app);
+        assert_eq!(app.selected_tool, Some(1));
+    }
+
+    // ─── Step 4: parse_chat_blocks tests ─────────────────────────────────────
+
+    #[test]
+    fn parse_chat_blocks_no_fence() {
+        let blocks = parse_chat_blocks("hello world");
+        assert_eq!(blocks, vec![ChatBlock::Text("hello world\n".to_string())]);
+    }
+
+    #[test]
+    fn parse_chat_blocks_single_fence() {
+        let input = "intro\n```\ncode\n```\n";
+        let blocks = parse_chat_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![
+                ChatBlock::Text("intro\n".to_string()),
+                ChatBlock::Code { lang: "".to_string(), content: "code\n".to_string() },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_chat_blocks_with_lang() {
+        let input = "```rust\nfn main() {}\n```\n";
+        let blocks = parse_chat_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![ChatBlock::Code { lang: "rust".to_string(), content: "fn main() {}\n".to_string() }]
+        );
+    }
+
+    #[test]
+    fn parse_chat_blocks_unclosed_fence() {
+        let input = "intro\n```python\nsome code\n";
+        let blocks = parse_chat_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![
+                ChatBlock::Text("intro\n".to_string()),
+                ChatBlock::Code { lang: "python".to_string(), content: "some code\n".to_string() },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_chat_blocks_empty() {
+        let blocks = parse_chat_blocks("");
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn streaming_lifecycle_chunks_appended() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::TextChunk("Hello ".to_string()));
+        app.handle_ui_event(TurnEvent::TextChunk("world".to_string()));
+        assert_eq!(app.chat_history.len(), 1);
+        assert_eq!(
+            app.chat_history[0],
+            ChatEntry::AssistantStreaming("Hello world".to_string())
+        );
+    }
+
+    #[test]
+    fn streaming_lifecycle_ends_as_done() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::TextChunk("Hello ".to_string()));
+        app.handle_ui_event(TurnEvent::TextChunk("world".to_string()));
+        app.handle_ui_event(TurnEvent::TurnEnd);
+        assert_eq!(app.chat_history.len(), 1);
+        assert_eq!(
+            app.chat_history[0],
+            ChatEntry::AssistantDone(vec![ChatBlock::Text("Hello world\n".to_string())])
+        );
+    }
+
+    // ── Step 5: scroll_pinned auto-scroll anchor ──────────────────────────────
+
+    #[test]
+    fn headless_app_starts_pinned() {
+        let app = TuiApp::headless();
+        assert!(app.scroll_pinned, "should start pinned");
+    }
+
+    #[test]
+    fn text_chunk_auto_scrolls_when_pinned() {
+        let mut app = TuiApp::headless();
+        assert!(app.scroll_pinned);
+        app.handle_ui_event(TurnEvent::TextChunk("hi".to_string()));
+        assert_eq!(app.scroll_offset, usize::MAX, "pinned: offset should jump to MAX on new content");
+    }
+
+    #[test]
+    fn text_chunk_no_auto_scroll_when_unpinned() {
+        let mut app = TuiApp::headless();
+        app.scroll_pinned = false;
+        app.scroll_offset = 10;
+        app.handle_ui_event(TurnEvent::TextChunk("hi".to_string()));
+        assert_eq!(app.scroll_offset, 10, "unpinned: offset should not change on new content");
+    }
+
+    #[test]
+    fn tool_start_auto_scrolls_when_pinned() {
+        let mut app = TuiApp::headless();
+        assert!(app.scroll_pinned);
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "bash".to_string(),
+            params: serde_json::json!({}),
+        });
+        assert_eq!(app.scroll_offset, usize::MAX);
+    }
+
+    #[test]
+    fn tool_complete_auto_scrolls_when_pinned() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ToolStart {
+            name: "bash".to_string(),
+            params: serde_json::json!({}),
+        });
+        app.scroll_offset = 5; // reset to simulate user scrolled then G
+        app.scroll_pinned = true;
+        app.handle_ui_event(TurnEvent::ToolComplete {
+            name: "bash".to_string(),
+            result: "done".to_string(),
+            is_error: false,
+        });
+        assert_eq!(app.scroll_offset, usize::MAX);
+    }
+
+    #[test]
+    fn turn_end_auto_scrolls_when_pinned() {
+        let mut app = TuiApp::headless();
+        // Simulate a streaming assistant message then end
+        app.handle_ui_event(TurnEvent::TextChunk("hello".to_string()));
+        app.scroll_offset = 5; // simulate user scrolled mid-stream then G re-pins
+        app.scroll_pinned = true;
+        app.handle_ui_event(TurnEvent::TurnEnd);
+        assert_eq!(
+            app.scroll_offset,
+            usize::MAX,
+            "TurnEnd should auto-scroll to MAX when pinned"
+        );
+    }
+
+    #[test]
+    fn turn_end_no_auto_scroll_when_unpinned() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::TextChunk("hello".to_string()));
+        app.scroll_pinned = false;
+        app.scroll_offset = 7;
+        app.handle_ui_event(TurnEvent::TurnEnd);
+        assert_eq!(
+            app.scroll_offset, 7,
+            "TurnEnd should not change scroll_offset when unpinned"
+        );
     }
 }
