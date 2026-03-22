@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // ─── Sub-config structs ────────────────────────────────────────────────────
 
@@ -51,6 +51,28 @@ impl Default for ToolsConfig {
     }
 }
 
+/// Configuration for the skill injection middleware.
+#[derive(Debug, Clone)]
+pub struct SkillsConfig {
+    /// Whether skill injection is enabled.
+    pub enabled: bool,
+    /// Maximum number of skills to inject per turn.
+    pub max_injected: usize,
+    /// Explicit skill directories. `None` means use the default dirs
+    /// (`~/.ap/skills/` and `./ap-skills/`).
+    pub dirs: Option<Vec<PathBuf>>,
+}
+
+impl Default for SkillsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_injected: 5,
+            dirs: None,
+        }
+    }
+}
+
 // ─── Top-level AppConfig ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -59,6 +81,8 @@ pub struct AppConfig {
     pub provider: ProviderConfig,
     pub hooks: HooksConfig,
     pub tools: ToolsConfig,
+    #[serde(skip)]
+    pub skills: SkillsConfig,
 }
 
 // ─── Fine-grained table overlay ───────────────────────────────────────────
@@ -106,6 +130,28 @@ fn overlay_from_table(mut base: AppConfig, table: toml::Table) -> AppConfig {
         if let Ok(t) = toml::Value::Table(tt.clone()).try_into::<ToolsConfig>() {
             if tt.contains_key("enabled") {
                 base.tools.enabled = t.enabled;
+            }
+        }
+    }
+    if let Some(toml::Value::Table(st)) = table.get("skills") {
+        if st.contains_key("enabled") {
+            if let Some(toml::Value::Boolean(v)) = st.get("enabled") {
+                base.skills.enabled = *v;
+            }
+        }
+        if st.contains_key("max_injected") {
+            if let Some(toml::Value::Integer(v)) = st.get("max_injected") {
+                base.skills.max_injected = usize::try_from(*v).unwrap_or(0);
+            }
+        }
+        if st.contains_key("dirs") {
+            if let Some(toml::Value::Array(arr)) = st.get("dirs") {
+                let dirs: Vec<PathBuf> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(PathBuf::from)
+                    .collect();
+                base.skills.dirs = Some(dirs);
             }
         }
     }
@@ -256,5 +302,67 @@ model = "project-model"
             "error message should contain file path, got: {}",
             err_msg
         );
+    }
+
+    // ── SkillsConfig tests ──────────────────────────────────────────────
+
+    #[test]
+    fn skills_config_default() {
+        let cfg = SkillsConfig::default();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.max_injected, 5);
+        assert!(cfg.dirs.is_none());
+    }
+
+    #[test]
+    fn skills_config_toml_overlay() {
+        let project = write_toml(
+            r#"
+[skills]
+max_injected = 3
+enabled = false
+"#,
+        );
+        let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
+        assert_eq!(cfg.skills.max_injected, 3);
+        assert!(!cfg.skills.enabled);
+        // dirs not set — should remain None
+        assert!(cfg.skills.dirs.is_none());
+    }
+
+    #[test]
+    fn skills_config_missing_keys_preserve_defaults() {
+        let project = write_toml("[skills]\n");
+        let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
+        assert!(cfg.skills.enabled);
+        assert_eq!(cfg.skills.max_injected, 5);
+        assert!(cfg.skills.dirs.is_none());
+    }
+
+    #[test]
+    fn skills_config_dirs_overlay() {
+        let project = write_toml(
+            r#"
+[skills]
+dirs = ["/tmp/skills", "/home/user/skills"]
+"#,
+        );
+        let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
+        let dirs = cfg.skills.dirs.unwrap();
+        assert_eq!(dirs.len(), 2);
+        assert_eq!(dirs[0], PathBuf::from("/tmp/skills"));
+        assert_eq!(dirs[1], PathBuf::from("/home/user/skills"));
+    }
+
+    #[test]
+    fn skills_config_negative_max_injected_becomes_zero() {
+        let project = write_toml(
+            r#"
+[skills]
+max_injected = -1
+"#,
+        );
+        let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
+        assert_eq!(cfg.skills.max_injected, 0);
     }
 }

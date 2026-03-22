@@ -84,7 +84,11 @@ async fn turn_loop(
         // Clone the message snapshot so `stream` doesn't borrow `conv` for the
         // entire loop body (we need to push to `conv.messages` later).
         let messages_snapshot = conv.messages.clone();
-        let mut stream = provider.stream_completion(&messages_snapshot, &tool_schemas);
+        // Clone system_prompt to avoid holding a borrow on `conv` across the
+        // async stream boundary (stream lifetime may outlive the loop body).
+        let system_prompt_owned = conv.system_prompt.clone();
+        let system_prompt = system_prompt_owned.as_deref();
+        let mut stream = provider.stream_completion(&messages_snapshot, &tool_schemas, system_prompt);
 
         let mut assistant_text = String::new();
         let mut pending_tools: Vec<PendingTool> = Vec::new();
@@ -322,6 +326,7 @@ mod tests {
             &'a self,
             _messages: &'a [crate::provider::Message],
             _tools: &'a [serde_json::Value],
+            _system_prompt: Option<&'a str>,
         ) -> BoxStream<'a, Result<StreamEvent, ProviderError>> {
             let events = self
                 .scripts
@@ -341,6 +346,7 @@ mod tests {
             &'a self,
             _messages: &'a [crate::provider::Message],
             _tools: &'a [serde_json::Value],
+            _system_prompt: Option<&'a str>,
         ) -> BoxStream<'a, Result<StreamEvent, ProviderError>> {
             Box::pin(stream::iter(vec![Err(ProviderError::Aws(
                 "network failure".to_string(),

@@ -8,11 +8,13 @@ use ap::config::AppConfig;
 use ap::middleware::shell_hook_bridge;
 use ap::provider::BedrockProvider;
 use ap::session::{store::SessionStore, Session};
+use ap::skills::{skill_injection_middleware, SkillLoader};
 use ap::tools::ToolRegistry;
 use ap::tui::TuiApp;
 use ap::turn::turn;
 use ap::types::{Conversation, TurnEvent};
 use clap::Parser;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// ap — A terminal AI coding agent powered by AWS Bedrock
@@ -89,8 +91,19 @@ async fn run_headless(
     // Build tools (recipe-style)
     let tools = ToolRegistry::with_defaults();
 
-    // Build middleware from shell hooks config
-    let middleware = shell_hook_bridge(&config.hooks);
+    // Resolve skill directories
+    let skill_dirs = resolve_skill_dirs(config.skills.dirs.as_ref());
+
+    // Build middleware from shell hooks config + optional skill injection
+    let middleware = {
+        let mw = shell_hook_bridge(&config.hooks);
+        if config.skills.enabled {
+            let loader = SkillLoader::new(skill_dirs);
+            mw.pre_turn(skill_injection_middleware(loader, config.skills.clone()))
+        } else {
+            mw
+        }
+    };
 
     // Set up session store (only when --session is given)
     let store: Option<SessionStore> = session_id.as_ref().map(|_| {
@@ -183,7 +196,17 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
 
     // Build tools, middleware, and conversation
     let tools = Arc::new(ToolRegistry::with_defaults());
-    let middleware = Arc::new(shell_hook_bridge(&config.hooks));
+    let middleware = {
+        let skill_dirs = resolve_skill_dirs(config.skills.dirs.as_ref());
+        let mw = shell_hook_bridge(&config.hooks);
+        if config.skills.enabled {
+            let loader = SkillLoader::new(skill_dirs);
+            mw.pre_turn(skill_injection_middleware(loader, config.skills.clone()))
+        } else {
+            mw
+        }
+    };
+    let middleware = Arc::new(middleware);
     let model_name = config.provider.model.clone();
     let conv = Arc::new(tokio::sync::Mutex::new(Conversation::new(
         uuid::Uuid::new_v4().to_string(),
@@ -194,6 +217,23 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
     // Build and run TUI
     let mut app = TuiApp::new(conv, provider, tools, middleware, model_name)?;
     app.run().await
+}
+
+/// Resolve the skill directories to pass to `SkillLoader`.
+///
+/// If `dirs` is `Some`, use those directly.
+/// Otherwise build the default list: `~/.ap/skills/` and `./.ap/skills/`,
+/// filtering to paths that currently exist on disk.
+fn resolve_skill_dirs(dirs: Option<&Vec<PathBuf>>) -> Vec<PathBuf> {
+    if let Some(explicit) = dirs {
+        return explicit.clone();
+    }
+    let mut default_dirs = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        default_dirs.push(home.join(".ap/skills"));
+    }
+    default_dirs.push(PathBuf::from(".ap/skills"));
+    default_dirs.into_iter().filter(|p| p.exists()).collect()
 }
 
 #[cfg(test)]
