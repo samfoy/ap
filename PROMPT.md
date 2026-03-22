@@ -1,180 +1,162 @@
-# ap — AI Coding Agent in Rust
+# ap — FP Refactor
 
-Build `ap`, a terminal AI coding agent written in Rust with a ratatui TUI.
+Refactor the existing `ap` Rust agent (in `ap/`) toward a functional, pipeline-oriented architecture. The goal is to make `ap` maximally hackable through direct code modification — no plugin system, just clean composable Rust that a developer can confidently fork and extend.
 
 ## Vision
 
-`ap` is a first-class, extensible AI coding assistant that runs in the terminal. It should feel like a native tool — fast, composable, and hackable. Think of it as a spiritual sibling to `pi`, but in Rust, with a ratatui UI and a clean extension system baked in from day one.
+`ap` should feel like a Unix pipeline in Rust. Each turn is a pure data transformation. Adding behavior means inserting a function into a chain, not wiring up an extension system. The codebase should be so clean and obvious that reading `app.rs` tells you the whole story.
 
-## Core Requirements
+## Core Refactoring Goals
 
-### Language & Stack
-- **Language:** Rust (stable toolchain)
-- **TUI:** ratatui + crossterm
-- **Async:** tokio
-- **CLI:** clap (derive API)
-- **HTTP client:** reqwest (async)
-- **Serialization:** serde + serde_json
-- **Config:** toml (config files)
+### 1. Immutable Conversation State
 
-### AI Provider: AWS Bedrock
-- Use AWS SDK for Rust (`aws-sdk-bedrockruntime`)
-- Default model: `us.anthropic.claude-sonnet-4-6`
-- Credentials: pick up from environment / `~/.aws/` (standard AWS SDK credential chain)
-- Support streaming responses (invoke_model_with_response_stream)
-- Region: us-west-2
+Replace mutable agent loop state with an immutable `Conversation` value:
 
-### Built-in Tools (first-class, always available)
-1. **read** — read a file, return contents
-2. **write** — write/create a file
-3. **edit** — replace text in a file (old_text → new_text)
-4. **bash** — run a shell command, return stdout/stderr/exit code
-
-Tools follow a simple trait:
 ```rust
-pub trait Tool: Send + Sync {
-    fn name(&self) -> &str;
-    fn description(&self) -> &str;
-    fn schema(&self) -> serde_json::Value;  // JSON Schema for parameters
-    fn execute(&self, params: serde_json::Value) -> impl Future<Output = ToolResult> + Send;
+pub struct Conversation {
+    pub id: String,
+    pub model: String,
+    pub messages: Vec<Message>,
+    pub config: AppConfig,
 }
 ```
 
-### Hooks System
-First-class lifecycle hooks, configurable via `ap.toml`:
-- `pre_tool_call` — before any tool executes (can cancel/modify)
-- `post_tool_call` — after tool executes (can inspect/log result)
-- `pre_turn` — before agent sends to LLM
-- `post_turn` — after agent receives response
-- `on_error` — on any error
+Each turn returns a new `Conversation` — no mutation. The loop is:
 
-Hooks are shell commands. Ralph injects: tool name, params (JSON), result (JSON) via env vars or stdin.
-
-### Extensions System
-Extensions are Rust dynamic libraries (`.dylib`/`.so`) or WASM modules loaded at startup.
-They can:
-- Register new tools
-- Register new hooks
-- Add custom UI panels to the ratatui TUI
-- Intercept/transform messages
-
-Extension interface:
 ```rust
-pub trait Extension: Send + Sync {
-    fn name(&self) -> &str;
-    fn version(&self) -> &str;
-    fn register(&self, registry: &mut Registry);
+loop {
+    let (conv, events) = turn(conv, &provider, &tools, &middleware).await?;
+    if is_done(&events) { break; }
 }
 ```
 
-Extensions discovered from `~/.ap/extensions/` and `./.ap/extensions/`.
+### 2. Pipeline Turn Function
 
-Config in `ap.toml` (project-level) and `~/.ap/config.toml` (global):
-```toml
-[provider]
-backend = "bedrock"
-model = "us.anthropic.claude-sonnet-4-6"
-region = "us-west-2"
+The core `turn` function is a pure async pipeline:
 
-[tools]
-# all built-ins enabled by default
-
-[hooks]
-pre_tool_call = "~/.ap/hooks/pre_tool.sh"
-# etc.
-
-[extensions]
-# auto-discovered from ~/.ap/extensions/
+```rust
+pub async fn turn(
+    conv: Conversation,
+    provider: &dyn Provider,
+    tools: &ToolRegistry,
+    middleware: &Middleware,
+) -> Result<(Conversation, Vec<TurnEvent>)>
 ```
 
-### Ratatui TUI
-Layout:
-- **Top:** status bar (model, provider, token count)
-- **Center-left:** conversation / agent output (scrollable)
-- **Center-right:** tool activity / live tool output
-- **Bottom:** input box (multiline, vim-ish keybindings)
-- **Overlay:** file picker, help modal
+Internally it's a sequence of pure transforms:
+1. `apply_pre_turn(conv, middleware)` → `Conversation`
+2. `stream_completion(conv, provider)` → `Vec<TurnEvent>`
+3. `collect_tool_calls(events)` → `Vec<ToolCall>`
+4. `execute_tools(tool_calls, tools, middleware)` → `Vec<ToolResult>`
+5. `append_turn(conv, events, results)` → `Conversation`
 
-Key bindings:
-- `i` / `Enter` — focus input
-- `Esc` — back to normal mode
-- `Ctrl+C` — quit
-- `Ctrl+L` — clear screen
-- `/help` — show keybindings
+Each step is a standalone function, easily testable, easily replaced.
 
-### Non-interactive Mode
-`ap -p "your prompt"` — run headless, print output, exit. Good for scripting and being driven by Ralph.
+### 3. Rust Middleware Chain (replace shell hooks)
 
-### Session Persistence
-- Sessions saved to `~/.ap/sessions/<id>.json`
-- `--session <id>` to resume
+Replace the shell script hook system with a composable Rust middleware chain. Hooks become functions:
 
-## Project Structure
+```rust
+pub type ToolMiddleware = Box<dyn Fn(ToolCall) -> ToolMiddlewareResult + Send + Sync>;
+pub type TurnMiddleware = Box<dyn Fn(&Conversation) -> Option<Conversation> + Send + Sync>;
 
+pub struct Middleware {
+    pub pre_turn: Vec<TurnMiddleware>,
+    pub post_turn: Vec<TurnMiddleware>,
+    pub pre_tool: Vec<ToolMiddleware>,
+    pub post_tool: Vec<ToolMiddleware>,
+}
 ```
-ap/
-├── Cargo.toml
-├── ap.toml.example
-├── src/
-│   ├── main.rs
-│   ├── app.rs           # App state
-│   ├── config.rs        # Config loading (ap.toml)
-│   ├── provider/
-│   │   ├── mod.rs
-│   │   └── bedrock.rs   # AWS Bedrock provider
-│   ├── tools/
-│   │   ├── mod.rs
-│   │   ├── read.rs
-│   │   ├── write.rs
-│   │   ├── edit.rs
-│   │   └── bash.rs
-│   ├── hooks/
-│   │   ├── mod.rs
-│   │   └── runner.rs
-│   ├── extensions/
-│   │   ├── mod.rs
-│   │   └── loader.rs
-│   ├── tui/
-│   │   ├── mod.rs
-│   │   ├── ui.rs
-│   │   └── events.rs
-│   └── session/
-│       ├── mod.rs
-│       └── store.rs
-└── README.md
+
+`ToolMiddlewareResult`:
+```rust
+pub enum ToolMiddlewareResult {
+    Allow(ToolCall),              // pass through (possibly modified)
+    Block(String),                // cancel with reason sent to Claude
+    Transform(ToolResult),        // skip execution, return this result
+}
 ```
+
+Someone who wants "log every bash call" just does:
+```rust
+middleware.pre_tool.push(Box::new(|call| {
+    if call.name == "bash" { eprintln!("[tool] bash: {}", call.params); }
+    ToolMiddlewareResult::Allow(call)
+}));
+```
+
+**Keep shell hook config for backwards compat** — `HooksConfig` shell commands get wrapped as `ToolMiddleware`/`TurnMiddleware` automatically at startup if configured. But the primary API is Rust closures.
+
+### 4. Tool Registry as Data
+
+Tools are already trait objects — keep that. But make `ToolRegistry` more functional:
+- `ToolRegistry::with(tool)` builder pattern (chainable)
+- Tools registered in `main.rs` in one obvious place, no magic discovery
+
+### 5. Clean `main.rs`
+
+`main.rs` should read like a recipe:
+```rust
+let tools = ToolRegistry::new()
+    .with(ReadTool)
+    .with(WriteTool)
+    .with(EditTool)
+    .with(BashTool);
+
+let middleware = Middleware::new()
+    .pre_tool(log_tool_calls)    // built-in logger
+    .pre_tool(shell_hook_bridge(&config.hooks)); // shell hook compat
+
+let conv = Conversation::new(session_id, config.provider.model.clone(), config.clone());
+
+run(conv, &provider, &tools, &middleware).await?;
+```
+
+## What to Keep
+
+- `Tool` trait and all 4 built-in tools — they're fine
+- `Provider` trait and `BedrockProvider` — good abstraction
+- ratatui TUI — keep, wire to new event types
+- Config system — keep
+- Session persistence — update to save/load `Conversation`
+- `-p` non-interactive mode — keep
+
+## What to Remove/Replace
+
+- `AgentLoop` struct with mutable state → replace with pure `turn()` function
+- Shell-only hook system → replace with `Middleware` chain (shell hooks become an adapter)
+- `UiEvent` enum → merge into `TurnEvent` (single event type for both TUI and headless)
 
 ## Implementation Plan
 
-Implement in order — each step should compile and be testable:
+Implement in order — each step must compile and tests must pass:
 
-1. **Cargo.toml + project scaffold** — workspace, all deps, basic `main.rs` that prints version
-2. **Config system** — `ap.toml` loading with serde, defaults, merge global + project
-3. **Tool trait + 4 built-in tools** — read, write, edit, bash with unit tests
-4. **Bedrock provider** — streaming API calls, message formatting for Claude, tool call parsing
-5. **Hooks system** — shell command runner, env var injection, pre/post hooks
-6. **Extensions system** — discovery, loading interface (trait object, no actual dylib loading needed in v1 — stub it)
-7. **Agent loop** — conversation state, tool dispatch, streaming output, error handling
-8. **Session persistence** — save/load JSON sessions
-9. **Ratatui TUI** — layout, input box, scrollable output, tool activity panel
-10. **Non-interactive mode** — `-p` flag, headless operation
-11. **README.md** — usage, config reference, extension/hook docs
-12. **Final polish** — `cargo clippy`, `cargo test`, fix all warnings
+1. **Define core types** — `Conversation`, `TurnEvent`, `ToolCall`, `ToolMiddlewareResult`, `Middleware` structs in `src/types.rs`
+2. **Refactor agent loop** — implement pure `turn()` in `src/turn.rs`, delete `AgentLoop`
+3. **Implement Middleware chain** — `src/middleware.rs` with `Middleware` struct and shell hook bridge
+4. **Wire ToolRegistry builder** — chainable `.with()` pattern
+5. **Update main.rs** — clean recipe-style startup
+6. **Update TUI** — wire to new `TurnEvent` type
+7. **Update session persistence** — save/load `Conversation`
+8. **Update non-interactive mode** — use new `turn()` pipeline
+9. **Tests + clippy** — all tests pass, zero warnings
+10. **README update** — document the middleware API and how to extend
 
 ## Acceptance Criteria
 
-- [ ] `cargo build --release` succeeds with zero warnings
-- [ ] `ap -p "read Cargo.toml and summarize it"` works end-to-end with real Bedrock calls
-- [ ] All 4 tools work and have unit tests
-- [ ] TUI renders without crashing
-- [ ] Hook system executes shell commands at correct lifecycle points
-- [ ] Extension discovery loads from `~/.ap/extensions/` without crashing
-- [ ] `README.md` is complete and accurate
+- [ ] `cargo build --release` — zero warnings
+- [ ] `ap -p "read Cargo.toml and summarize it"` — works end-to-end
+- [ ] TUI renders and runs correctly
+- [ ] `AgentLoop` struct is gone — replaced by pure `turn()` function
+- [ ] `Middleware` chain works — pre_tool closure can block/allow/transform a tool call
+- [ ] Shell hook config still works (bridge adapter)
+- [ ] `main.rs` reads clearly as a pipeline setup
+- [ ] All tests pass
+- [ ] Output LOOP_COMPLETE when done
 
 ## Notes
 
-- Commit frequently with conventional commits (feat/fix/chore/refactor)
-- Don't over-engineer v1 — clean interfaces, solid foundation
-- The extension system in v1 can be interface-only (trait defined, no actual dylib loading) — what matters is the API is right
-- Hooks in v1: shell commands only, no scripting API needed yet
-- Output LOOP_COMPLETE when all acceptance criteria are met and the project builds clean
+- This is a refactor — behavior must not change, only structure
+- Commit frequently with conventional commits
+- If a step reveals the design needs adjustment, update the scratchpad and continue
+- The middleware chain is the main new concept — get that right first
