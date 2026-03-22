@@ -143,10 +143,22 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 19. [ ] **Expanded Bedrock model support** — Expose the full range of available Bedrock models, including image generation:
     - **Text/chat models:** Add model ID listing for all available Bedrock inference profiles (us.amazon.nova-pro-v1, us.amazon.nova-lite-v1, us.amazon.nova-micro-v1, us.meta.llama3-70b-instruct-v1, us.mistral.mistral-large-2402-v1, etc.) alongside existing Claude models
-    - **Image generation:** Add `generate_image` built-in tool backed by Bedrock image models:
-      - Amazon Nova Canvas (`amazon.nova-canvas-v1:0`) — text-to-image, image editing, outpainting
-      - Stability AI Stable Diffusion 3.5 (`stability.sd3-5-large-v1:0`) — high quality text-to-image
-      - Amazon Titan Image Generator G1 v2 (`amazon.titan-image-generator-v2:0`)
+    - **Image generation:** Add `generate_image` built-in tool backed by Bedrock image models. Available models confirmed via API:
+      - `amazon.nova-canvas-v1:0` — Nova Canvas (text-to-image, inpaint, outpaint)
+      - `amazon.titan-image-generator-v2:0` — Titan Image Generator G1 v2
+      - `stability.stable-image-inpaint-v1:0` — Stable Image Inpaint
+      - `stability.stable-outpaint-v1:0` — Stable Image Outpaint
+      - `stability.stable-image-erase-object-v1:0` — Erase Object
+      - `stability.stable-image-search-replace-v1:0` — Search and Replace
+      - `stability.stable-image-search-recolor-v1:0` — Search and Recolor
+      - `stability.stable-image-style-guide-v1:0` — Style Guide
+      - `stability.stable-style-transfer-v1:0` — Style Transfer
+      - `stability.stable-image-control-sketch-v1:0` — Control Sketch
+      - `stability.stable-image-control-structure-v1:0` — Control Structure
+      - `stability.stable-creative-upscale-v1:0` — Creative Upscale
+      - `stability.stable-conservative-upscale-v1:0` — Conservative Upscale
+      - `stability.stable-fast-upscale-v1:0` — Fast Upscale
+      - `stability.stable-image-remove-background-v1:0` — Remove Background
     - Tool schema: `{ "prompt": string, "negative_prompt"?: string, "model"?: string, "width"?: number, "height"?: number, "seed"?: number }`
     - Output: saves image to `~/.ap/images/<timestamp>-<slug>.png`, returns file path + opens in default viewer (macOS: `open`)
     - Config: `[bedrock] image_model = "amazon.nova-canvas-v1:0"` (default)
