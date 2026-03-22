@@ -30,7 +30,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Skills referenced in AGENTS.md trigger skill loading from `~/.ap/skills/` or `./.ap/skills/`
     - Compatible with pi, claude code, and OpenClaw AGENTS.md conventions
 
-3. [ ] **Self-hosting (ap builds ap)** — Switch the Ralph build loop from pi to ap itself:
+3. [~] **Self-hosting (ap builds ap)** — Switch the Ralph build loop from pi to ap itself:
     - Gate: `ap -p "read BACKLOG.md and summarize the next 3 items"` works reliably end-to-end
     - Update `ralph.yml` cli.backend from `pi` to `ap`
     - Update `ap-monitor.py` to use `ap --print` instead of `pi --print`

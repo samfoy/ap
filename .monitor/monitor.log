@@ -29,3 +29,7 @@ One gap worth noting: `ShellTool::execute` uses `std::process::Command` synchron
 The gap is concrete: BACKLOG.md marks AGENTS.md support as `[~]` (in progress) but it's phantom progress — it was only *promoted* in priority order, never built. The actual feature (load global + project AGENTS.md, inject into system prompt at startup, hot-reload on next turn) is still entirely missing from `src/`.
 [13:50:43] Merging feature/agents-md-support into main...
 [13:50:44] Merged and cleaned up worktree for: AGENTS.md support
+[15:07:19] Merge conflict on Conversation context management: 
+[15:07:23] Conflict info saved to /Users/sam.painter/Projects/ap/.monitor/conflicts/conversation-context-management.md. Skipping Conversation context management for now.
+[15:07:23] Starting: Self-hosting (ap builds ap)
+[15:07:23] Created worktree: /Users/sam.painter/Projects/ap-worktrees/self-hosting-ap-builds-ap (feature/self-hosting-ap-builds-ap)
