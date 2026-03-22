@@ -39,3 +39,10 @@ The gap is concrete: BACKLOG.md marks AGENTS.md support as `[~]` (in progress) b
 [15:07:29] Ralph running for Session management UX
 [15:07:29] Starting: Model switching
 [15:07:29] Created worktree: /Users/sam.painter/Projects/ap-worktrees/model-switching (feature/model-switching)
+[15:07:33] Ralph running for Model switching
+[15:08:03] LOOP_COMPLETE: Self-hosting (ap builds ap)
+[15:08:18] Review: **No, it didn't land.** The "Self-hosting" item is marked `[~]` (in progress) in BACKLOG.md but the two commits in this range are housekeeping only — `acac779` is just `.monitor/memory.md` + log updates, and `f4db103` is a big monitor script hardening (`ap-monitor.py`). Neither touches `ralph.yml` or switches the loop CLI from `pi` to `ap`.
+
+The concrete gap: the three gating prerequisites from the backlog entry — Provider abstraction, AGENTS.md injection, and stable `--print` mode — are themselves incomplete (AGENTS.md was flagged as phantom progress in the previous review entry), so the flip of `cli.backend` to `ap` was never attempted. The monitor got more robust, but ap is still not driving its own loop.
+[15:08:18] Merging feature/self-hosting-ap-builds-ap into main...
+[15:08:18] Merged and cleaned up worktree for: Self-hosting (ap builds ap)

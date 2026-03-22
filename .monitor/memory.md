@@ -36,3 +36,15 @@ Commits:
 90b7054 fchore(monitor): complete {title}
 407d022 chore(backlog): add model switching, slack bot, self-hosting, code review items
 f6d8d07 feat: merge richer-tui
+
+## 2026-03-22 15:08 — Self-hosting (ap builds ap)
+Review: **No, it didn't land.** The "Self-hosting" item is marked `[~]` (in progress) in BACKLOG.md but the two commits in this range are housekeeping only — `acac779` is just `.monitor/memory.md` + log updates, and `f4db103` is a big monitor script hardening (`ap-monitor.py`). Neither touches `ralph.yml` or switches the loop CLI from `pi` to `ap`.
+
+The concrete gap: the three gating prerequisites from the backlog entry — Provider abstraction, AGENTS.md injection, and stable `--print` mode — are themselves incomplete (AGENTS.md was flagged as phantom progress in the previous review entry), so the flip of `cli.backend` to `ap` was never attempted. The monitor got more robust, but ap is still not driving its own loop.
+Commits:
+5305981 chore: auto-commit before merge (loop primary)
+acac779 chore(monitor): complete AGENTS.md support
+f4db103 feat(monitor): robust restart — state persistence, stall detection, conflict recovery, push on merge, heartbeat, retry prompts
+6a6e0e7 chore(backlog): mark skill-system, tool-discovery, richer-tui as complete
+6b50e4f chore(backlog): reorder for bootstrap-first — AGENTS.md and self-hosting promoted to top
+13e159b chore(backlog): add Kiro provider with full auth/API implementation notes
