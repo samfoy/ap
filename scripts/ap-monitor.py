@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-ap-monitor.py — Parallel development loop monitor using git worktrees.
+ap-monitor.py — Sequential development loop monitor using git worktrees.
 
-Picks up to MAX_PARALLEL independent backlog items, spins each in its own
-worktree + Ralph loop, watches all in parallel, merges on completion.
+Builds one backlog item at a time: spin a worktree + Ralph loop, wait for
+LOOP_COMPLETE, clean merge into main, then move to the next item.
 
 Robustness features:
 - Persists active state to .monitor/state.json (survives restarts)
 - Stall detection: restarts Ralph if no new events for STALL_MINUTES
-- Merge conflict recovery: abort + push to .monitor/conflicts/ for manual fix
+- Pre-merge cleanup: strips .ralph/ state files + PROMPT.md before merging
+  so ephemeral agent state never causes merge conflicts
 - Git push after every merge
 - Heartbeat log every N cycles
 - Retry prompt generation up to 3 times
-- Ralph process detection via pidfile
 """
 
 import json
@@ -32,7 +32,7 @@ LOG = AP_DIR / ".monitor/monitor.log"
 STATE_FILE = AP_DIR / ".monitor/state.json"
 CONFLICTS_DIR = AP_DIR / ".monitor/conflicts"
 
-MAX_PARALLEL = 3
+MAX_PARALLEL = 1          # sequential: one at a time
 CHECK_INTERVAL = 30       # seconds between main loop ticks
 STALL_MINUTES = 45        # restart Ralph if no new events for this long
 HEARTBEAT_CYCLES = 10     # log "still alive" every N cycles
@@ -268,15 +268,20 @@ def merge_worktree(title, wt_path):
     branch = branch_name(title)
     log(f"Merging {branch} into main...")
 
-    # Stash any dirty monitor files first
-    run("git stash --include-untracked -m 'monitor-stash' || true")
+    # Strip ephemeral agent state files before merge to prevent conflicts
+    ephemeral_patterns = [".ralph/", "PROMPT.md", ".monitor-ralph.log"]
+    for pat in ephemeral_patterns:
+        target = wt_path / pat
+        if target.exists():
+            run(f"rm -rf '{target}'")
+    # Commit the cleanup on the feature branch
+    r = run('git add -A && git commit -m "chore: strip ephemeral state before merge" || true', cwd=wt_path)
 
     r = run(f'git merge --no-ff {branch} -m "feat: merge {title}"')
     if r.returncode != 0:
         log(f"Merge conflict on {title}: {r.stderr[:300]}")
         run("git merge --abort || true")
-
-        # Save conflict info for manual resolution
+        CONFLICTS_DIR.mkdir(parents=True, exist_ok=True)
         conflict_note = CONFLICTS_DIR / f"{slug(title)}.md"
         conflict_note.write_text(
             f"# Merge conflict: {title}\n\n"
@@ -292,19 +297,13 @@ def merge_worktree(title, wt_path):
             f"git push origin main\n"
             f"```\n"
         )
-        run("git stash pop || true")
-        log(f"Conflict info saved to {conflict_note}. Skipping {title} for now.")
+        log(f"Conflict info saved to {conflict_note}. Skipping {title}.")
         return False
-
-    # Re-apply stashed monitor files
-    run("git stash pop || true")
 
     # Remove worktree and branch
     run(f"git worktree remove {wt_path} --force")
     run(f"git branch -d {branch} || git branch -D {branch} || true")
     log(f"Merged and cleaned up worktree for: {title}")
-
-    # Push to GitHub
     git_push()
     return True
 
@@ -337,7 +336,7 @@ def update_memory(title, review_text, wt_path):
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def main():
-    log("ap monitor started (parallel worktree mode)")
+    log("ap monitor started (sequential mode)")
 
     # Load persisted state
     raw_state = load_state()
