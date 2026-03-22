@@ -141,6 +141,17 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
+19. [ ] **Expanded Bedrock model support** — Expose the full range of available Bedrock models, including image generation:
+    - **Text/chat models:** Add model ID listing for all available Bedrock inference profiles (us.amazon.nova-pro-v1, us.amazon.nova-lite-v1, us.amazon.nova-micro-v1, us.meta.llama3-70b-instruct-v1, us.mistral.mistral-large-2402-v1, etc.) alongside existing Claude models
+    - **Image generation:** Add `generate_image` built-in tool backed by Bedrock image models:
+      - Amazon Nova Canvas (`amazon.nova-canvas-v1:0`) — text-to-image, image editing, outpainting
+      - Stability AI Stable Diffusion 3.5 (`stability.sd3-5-large-v1:0`) — high quality text-to-image
+      - Amazon Titan Image Generator G1 v2 (`amazon.titan-image-generator-v2:0`)
+    - Tool schema: `{ "prompt": string, "negative_prompt"?: string, "model"?: string, "width"?: number, "height"?: number, "seed"?: number }`
+    - Output: saves image to `~/.ap/images/<timestamp>-<slug>.png`, returns file path + opens in default viewer (macOS: `open`)
+    - Config: `[bedrock] image_model = "amazon.nova-canvas-v1:0"` (default)
+    - List available models: `ap models` CLI subcommand — shows all Bedrock models grouped by capability (text, image, embedding)
+
 ---
 
 ## ✅ Complete
