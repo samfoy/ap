@@ -60,3 +60,15 @@ f4db103 feat(monitor): robust restart — state persistence, stall detection, co
 6a6e0e7 chore(backlog): mark skill-system, tool-discovery, richer-tui as complete
 6b50e4f chore(backlog): reorder for bootstrap-first — AGENTS.md and self-hosting promoted to top
 13e159b chore(backlog): add Kiro provider with full auth/API implementation notes
+
+## 2026-03-22 15:10 — Kiro provider
+Review: The Kiro provider **did not land** in this log. Every commit in the listed range is monitor housekeeping (`chore(monitor)` backlog state updates, auto-commits, and a self-hosting merge) — no `src/provider/kiro.rs`, no auth module, no bracket-tool parser, no Rust code at all. The loop burned its turns on lower-priority items (Self-hosting, Session management UX) that were already `[x]` or in-flight, and only reached `chore(monitor): start Kiro provider` after the window you're reviewing, meaning it logged the intent but hadn't written a line of implementation yet.
+
+**Gap:** The `src/` tree doesn't exist in the working directory (all tool calls above confirmed this), so either the Rust source lives elsewhere or the project scaffold itself is a blocker. The backlog item for Kiro is rich with spec detail (API shape, auth flow, model IDs, a TypeScript reference at `~/Projects/pi-provider-kiro`) but none of that was translated into Rust during this loop run.
+Commits:
+830e5a1 chore(monitor): complete Session management UX
+51db87d chore(monitor): complete Self-hosting (ap builds ap)
+c3ada79 feat: merge Self-hosting (ap builds ap)
+5305981 chore: auto-commit before merge (loop primary)
+099b690 chore(monitor): start Model switching
+e5bce2e chore(monitor): start Session management UX
