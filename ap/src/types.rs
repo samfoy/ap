@@ -277,4 +277,18 @@ mod tests {
         let back: Conversation = serde_json::from_str(&json).expect("deserialize");
         assert!(back.system_prompt.is_none(), "deserialized system_prompt must be None");
     }
+
+    // AC (step-04): old JSON without system_prompt deserializes successfully (backward compat)
+    #[test]
+    fn conversation_serde_backward_compat() {
+        let old_json = r#"{
+            "id": "old-id",
+            "model": "claude-3",
+            "messages": [],
+            "config": {}
+        }"#;
+        let conv: Conversation = serde_json::from_str(old_json).expect("should deserialize");
+        assert_eq!(conv.id, "old-id");
+        assert_eq!(conv.system_prompt, None);
+    }
 }

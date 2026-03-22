@@ -5,11 +5,12 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::must_use_candidate)]
 use ap::config::AppConfig;
+use ap::discovery::discover;
 use ap::middleware::shell_hook_bridge;
 use ap::provider::BedrockProvider;
 use ap::session::{store::SessionStore, Session};
 use ap::skills::{skill_injection_middleware, SkillLoader};
-use ap::tools::ToolRegistry;
+use ap::tools::{ShellTool, ToolRegistry};
 use ap::tui::TuiApp;
 use ap::turn::turn;
 use ap::types::{Conversation, TurnEvent};
@@ -88,8 +89,19 @@ async fn run_headless(
         }
     };
 
-    // Build tools (recipe-style)
-    let tools = ToolRegistry::with_defaults();
+    // Discover project tools and skill system prompts
+    let project_root =
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let discovery = discover(&project_root);
+    for w in &discovery.warnings {
+        eprintln!("ap: {w}");
+    }
+
+    // Build tools (recipe-style) — register ShellTools before any Arc wrap
+    let mut tools = ToolRegistry::with_defaults();
+    for discovered in discovery.tools {
+        tools.register(Box::new(ShellTool::new(discovered, project_root.clone())));
+    }
 
     // Resolve skill directories
     let skill_dirs = resolve_skill_dirs(config.skills.dirs.as_ref());
@@ -125,6 +137,17 @@ async fn run_headless(
             }
         },
         _ => Conversation::new("ephemeral", config.provider.model.clone(), config.clone()),
+    };
+
+    // Apply discovered system prompt additions
+    let system_prompt: Option<String> = if discovery.system_prompt_additions.is_empty() {
+        None
+    } else {
+        Some(discovery.system_prompt_additions.join("\n\n"))
+    };
+    let conv = match system_prompt {
+        Some(sp) => conv.with_system_prompt(sp),
+        None => conv,
     };
 
     // Run turn() — pure function, returns (updated_conv, events)
@@ -194,8 +217,21 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
         }
     };
 
+    // Discover project tools and skill system prompts
+    let project_root =
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let discovery = discover(&project_root);
+    for w in &discovery.warnings {
+        eprintln!("ap: {w}");
+    }
+
     // Build tools, middleware, and conversation
-    let tools = Arc::new(ToolRegistry::with_defaults());
+    // ShellTools must be registered BEFORE Arc::new wrap
+    let mut tools = ToolRegistry::with_defaults();
+    for discovered in discovery.tools {
+        tools.register(Box::new(ShellTool::new(discovered, project_root.clone())));
+    }
+    let tools = Arc::new(tools);
     let middleware = {
         let skill_dirs = resolve_skill_dirs(config.skills.dirs.as_ref());
         let mw = shell_hook_bridge(&config.hooks);
@@ -208,11 +244,23 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
     };
     let middleware = Arc::new(middleware);
     let model_name = config.provider.model.clone();
-    let conv = Arc::new(tokio::sync::Mutex::new(Conversation::new(
+
+    // Apply discovered system prompt additions
+    let system_prompt: Option<String> = if discovery.system_prompt_additions.is_empty() {
+        None
+    } else {
+        Some(discovery.system_prompt_additions.join("\n\n"))
+    };
+    let base_conv = Conversation::new(
         uuid::Uuid::new_v4().to_string(),
         model_name.clone(),
         config.clone(),
-    )));
+    );
+    let initial_conv = match system_prompt {
+        Some(sp) => base_conv.with_system_prompt(sp),
+        None => base_conv,
+    };
+    let conv = Arc::new(tokio::sync::Mutex::new(initial_conv));
 
     // Build and run TUI
     let mut app = TuiApp::new(conv, provider, tools, middleware, model_name)?;
