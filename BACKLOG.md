@@ -107,6 +107,34 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Socket Mode for no-ingress-required deployment
     - Runs as a daemon: `ap slack-bot`
 
+6. [ ] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
+
+    **API details** (from pi-provider-kiro reference impl at ~/Projects/pi-provider-kiro):
+    - Endpoint: `https://q.us-east-1.amazonaws.com/generateAssistantResponse`
+    - Auth: Bearer token (AWS SSO access token)
+    - Request format: `{ conversationState: { currentMessage: { userInputMessage: { content, modelId, origin: "AI_EDITOR", images?, userInputMessageContext?: { toolResults?, tools? } } }, conversationId?, history? } }`
+    - Response: SSE stream of `data: {...}` events — parse `generateAssistantResponseResponse` events for text/tool chunks
+    - Tool calls: Kiro uses bracket format `[tool_name(param="val")]` in text stream — parse via bracket-tool-parser pattern
+    - Thinking: wrapped in `<thinking>...</thinking>` tags in the text stream
+
+    **Auth flow** (two methods):
+    1. **kiro-cli reuse** — Read from `~/Library/Application Support/kiro-cli/data.sqlite3`, keys `kirocli:odic:token` (IDC) or `kirocli:social:token` (desktop). Parse JSON value for `access_token`, `refresh_token`, `expires_at`, `region`. Preferred if kiro-cli is installed.
+    2. **Device code flow** — Register client at `https://oidc.us-east-1.amazonaws.com/client/register` → get device code at `/device_authorization` (startUrl: `https://view.awsapps.com/start`) → poll `/token` until user approves in browser. Scopes: `codewhisperer:completions`, `codewhisperer:analysis`, `codewhisperer:conversations`, `codewhisperer:transformations`, `codewhisperer:taskassist`.
+    - Token refresh: POST to `https://oidc.us-east-1.amazonaws.com/token` with `grant_type=refresh_token`
+    - Desktop token refresh: POST to `https://prod.{region}.auth.desktop.kiro.dev/refreshToken`
+
+    **Model IDs** (use dot notation in API, config uses dashes): claude-opus-4.6, claude-opus-4.6-1m, claude-sonnet-4.6, claude-sonnet-4.6-1m, claude-opus-4.5, claude-sonnet-4.5, claude-sonnet-4.5-1m, claude-sonnet-4, claude-haiku-4.5, deepseek-3.2, kimi-k2.5, minimax-m2.1, glm-4.7, glm-4.7-flash, qwen3-coder-next, qwen3-coder-480b, agi-nova-beta-1m. All are zero-cost.
+
+    **Rust implementation plan:**
+    - `src/provider/kiro.rs` — `KiroProvider` implementing `Provider` trait
+    - `src/auth/kiro.rs` — credential store, SQLite read (via `rusqlite`), device code flow, token refresh
+    - `src/provider/kiro_transform.rs` — message/tool conversion to Kiro wire format, bracket tool call parser
+    - Config: `[provider] backend = "kiro" model = "claude-sonnet-4.6"`
+    - Credential persistence: `~/.ap/kiro-token.json` (mirrors kiro-cli DB on write-back)
+    - `ap login kiro` — CLI subcommand to trigger device code flow and save token
+    - SSE parsing: reuse existing streaming infrastructure, add Kiro-specific event parser
+
+    **Reference:** ~/Projects/pi-provider-kiro/src/ — full TypeScript implementation to port from.
 4. [ ] **Self-hosting (ap builds ap)** — Switch the Ralph build loop from pi to ap itself:
     - Gate: `ap -p "read BACKLOG.md and summarize the next 3 items"` works reliably end-to-end
     - Update `ralph.yml` cli.backend from `pi` to `ap`
