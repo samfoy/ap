@@ -744,3 +744,422 @@ Summary:
 - E2E verified with real Bedrock API
 - README.md complete and accurate
 - All code-task files: status: completed
+
+## 2026-03-22 — New Objective: FP Refactor
+
+Fresh task.resume for ap FP refactor. Previous objective (building ap) is complete.
+
+### Current Architecture (pre-refactor)
+- `src/app.rs` — `AgentLoop` struct with mutable `Vec<Message>` state, `run_turn()` method
+- `src/main.rs` — builds AgentLoop, calls run_turn, drains UiEvent channel
+- `src/tools/mod.rs` — `ToolRegistry::with_defaults()` (auto-discovers tools)
+- `src/hooks/` — shell-script HookRunner (pre_turn, post_turn, pre_tool_call, post_tool_call)
+- `src/tui/` — TuiApp takes AgentLoop directly
+- `UiEvent` enum in app.rs used for both TUI and headless mode
+
+### Target Architecture
+- `src/types.rs` — `Conversation`, `TurnEvent`, `ToolCall`, `ToolMiddlewareResult`, `Middleware`
+- `src/turn.rs` — pure `turn()` function: apply_pre_turn → stream_completion → collect_tool_calls → execute_tools → append_turn
+- `src/middleware.rs` — `Middleware` struct with pre_turn/post_turn/pre_tool/post_tool chains; shell hook bridge
+- `src/tools/mod.rs` — `ToolRegistry::with()` builder
+- `src/main.rs` — recipe-style: build tools/middleware/conv, call run()
+- TUI wired to TurnEvent instead of UiEvent
+- Session saves/loads `Conversation`
+
+### Plan
+The design is fully specified in the objective. Emit design.approved → Explorer will research codebase → Planner creates incremental plan → Task Writer materializes tasks → Builder implements.
+
+Key complexities:
+1. TUI currently takes `AgentLoop` directly - needs to be decoupled
+2. Shell hooks → middleware bridge needs careful design (async shell execution in sync middleware?)  
+3. Session struct vs Conversation struct - need to consolidate
+4. UiEvent → TurnEvent unification while keeping headless + TUI both working
+
+## 2026-03-22 — Explorer Complete: ap FP Refactor Research
+
+Researched all source files for the FP refactor. Key findings:
+
+### Files to Change
+- DELETE: `src/app.rs` (AgentLoop + UiEvent)
+- CREATE: `src/types.rs`, `src/turn.rs`, `src/middleware.rs`
+- REWRITE: `src/main.rs`, `src/tui/mod.rs`, `tests/noninteractive.rs`
+- UPDATE: `src/tools/mod.rs` (add .with() builder), `src/lib.rs`, `src/session/mod.rs`
+- KEEP: provider, tools impls, hooks/runner.rs, tui/events.rs, tui/ui.rs, session/store.rs, config.rs
+
+### Key Constraints Discovered
+1. TuiApp directly stores `Arc<Mutex<AgentLoop>>` — will need to store Conversation + provider/tools/middleware refs instead, or use a channel-based submit pattern
+2. 7 TUI tests + 3 noninteractive tests reference UiEvent directly — must update all to TurnEvent
+3. HookRunner is sync (std::process::Command) — Middleware closures can be sync too, same pattern as before (no spawn_blocking needed, pre-existing pattern)  
+4. ToolCall struct needs `id` field for tool_use_id correlation in results
+5. Session → Conversation: Conversation adds `config: AppConfig`; clean break OK for v0.1.0
+6. shell hook bridge: HookOutcome::Cancelled → Block, Transformed → Transform(ToolResult::ok(content)), others → Allow
+
+Research artifacts at: `ap/.agents/scratchpad/implementation/ap-fp-refactor/`
+
+Emitting context.ready for Planner.
+
+## 2026-03-22 — Planning Complete: ap FP Refactor
+
+Created plan.md at `ap/.agents/scratchpad/implementation/ap-fp-refactor/plan.md`.
+
+8 implementation steps + README:
+1. Core types (types.rs) + ToolRegistry::with() builder — foundation, no existing code touched
+2. Pure turn() function (turn.rs) — coexists with AgentLoop
+3. Middleware chain (middleware.rs) + shell hook bridge
+4. Session update — save/load Conversation via SessionStore
+5. main.rs rewrite (recipe-style) + headless mode using turn() + noninteractive.rs rewrite
+6. TUI decoupling — TuiApp uses turn() + TurnEvent instead of AgentLoop
+7. Delete app.rs — final cleanup, AgentLoop and UiEvent gone
+8. README update — document Middleware API
+
+Key design decisions:
+- turn() takes tx: &mpsc::Sender<TurnEvent> for streaming; returns Result<Conversation>
+- Caller passes conv.with_user_message(input) — turn() doesn't append user msg itself
+- Middleware struct defined in types.rs (struct + type aliases), impl block in middleware.rs
+- Keep Session on-disk format; add parallel save_conversation/load_conversation to SessionStore
+- Steps 1-4 coexist with old AgentLoop; steps 5-7 progressively replace it
+- Wave-by-wave: each wave is one step = one independently verifiable code-task
+
+
+## 2026-03-22 — Task Writer: ap FP Refactor (plan.ready handled)
+
+Created 8 code task files in ap/.agents/scratchpad/implementation/ap-fp-refactor/tasks/:
+- task-01-core-types-and-registry-builder.code-task.md (Step 1 — ACTIVE)
+- task-02-pure-turn-function.code-task.md
+- task-03-middleware-chain-and-shell-bridge.code-task.md
+- task-04-session-persistence-conversation.code-task.md
+- task-05-main-recipe-style-and-headless.code-task.md
+- task-06-tui-decouple.code-task.md
+- task-07-delete-agentloop.code-task.md
+- task-08-readme-update.code-task.md
+
+Wave sequence matches plan.md Step Wave Schedule exactly.
+Step 1 materialized as runtime task task-1774194239-f3c1 (key: pdd:ap-fp-refactor:step-01:core-types-and-registry-builder).
+Progress tracked in ap/.agents/scratchpad/implementation/ap-fp-refactor/progress.md.
+Emitting tasks.ready → Builder.
+
+## 2026-03-22 — Task 01: Core Types + ToolRegistry::with() Builder Complete
+
+Created ap/src/types.rs with:
+- Conversation { id, model, messages: Vec<Message>, config: AppConfig } — Clone+Debug+Serde
+- Conversation::new() + with_user_message() (immutable-friendly, consuming self)
+- TurnEvent enum (TextChunk, ToolStart, ToolComplete, TurnEnd, Error) — Clone+Debug
+- ToolCall { id, name, params } — Clone+Debug+Serde
+- ToolMiddlewareResult { Allow(ToolCall), Block(String), Transform(ToolResult) } — Debug
+- ToolMiddlewareFn / TurnMiddlewareFn type aliases
+- Middleware { pre_turn, post_turn, pre_tool, post_tool } — Default
+
+Added ToolRegistry::with() consuming builder + tool_schemas() alias.
+Added pub mod types to lib.rs.
+
+Key finding: MessageContent::Text is struct variant { text: String }, not tuple.
+Message.content is Vec<MessageContent>.
+
+88 tests pass (9 new), zero clippy warnings.
+Committed: 34df8f4
+
+## 2026-03-22 — Fresh-Eyes Review: task-01 Core Types + ToolRegistry::with()
+
+Reviewed task-1774194239-f3c1 (pdd:ap-fp-refactor:step-01:core-types-and-registry-builder).
+
+### All ACs verified:
+- AC1: with_user_message() immutability test correct (clone passed, original preserved) ✓
+- AC2: All 5 TurnEvent variants clone correctly ✓
+- AC3: ToolCall serde roundtrip verified ✓
+- AC4: All 3 ToolMiddlewareResult variants match correctly ✓
+- AC5: ToolRegistry .with() builder chains verified ✓
+- AC6: with_defaults() still returns 4 tools ✓
+- AC7: 88 tests pass, zero failures, zero clippy warnings ✓
+
+### Code quality:
+- Purely additive (3 files only: types.rs created, tools/mod.rs + lib.rs updated)
+- No existing tests touched ✓
+- #[allow(clippy::derivable_impls)] on Middleware::default is acceptable suppression
+- Doctest marked ignore is reasonable (type import constraints)
+
+### Decision: review.passed
+
+## 2026-03-22 — Finalization: task-01 Core Types + ToolRegistry::with() closed
+
+review.passed received for task-1774194239-f3c1 (pdd:ap-fp-refactor:step-01:core-types-and-registry-builder).
+All 7 ACs verified, 88 tests pass, zero clippy warnings, purely additive change. Committed: 34df8f4.
+Closed runtime task task-1774194239-f3c1.
+Progress.md updated: Step 1 → completed.
+
+Remaining steps: 2 (turn.rs), 3 (middleware), 4 (session), 5 (main.rs), 6 (TUI), 7 (delete AgentLoop), 8 (README).
+Emitting queue.advance → Task Writer for Step 2.
+
+## 2026-03-22 — Task 02: Pure turn() Function Complete
+
+Implemented `src/turn.rs` with pure async `turn()` pipeline:
+- `apply_pre_turn` / `apply_post_turn`: fold TurnMiddlewareFn chain
+- `turn_loop`: iterative loop (not recursive) - streams provider, collects tool calls, executes tools, appends to conv
+- `run_pre_tool_chain`: fold ToolMiddlewareFn → (ToolCall, Option<ToolResult>); Block/Transform stop chain
+- `run_post_tool_chain`: post-execution override via Transform/Block
+- Key fix: clone `conv.messages` before passing to `stream_completion` (borrow checker - same pattern as app.rs)
+- Additive: app.rs/AgentLoop untouched; AgentLoop coexists with turn()
+- 7 new turn tests, all 95 tests pass, zero clippy warnings
+- Committed: f717304
+
+Emitting review.ready for Fresh-Eyes Critic.
+
+## 2026-03-22 — Finalization: task-02 Pure turn() Function closed
+
+review.passed received for task-1774194590-b3a7 (pdd:ap-fp-refactor:step-02:pure-turn-function).
+All 7 ACs verified, 95 tests pass, zero clippy warnings, additive — app.rs/AgentLoop untouched. Committed f717304.
+Closed runtime task task-1774194590-b3a7.
+Progress.md shows Step 3 (middleware chain + shell bridge) is next.
+
+Remaining steps: 3 (middleware), 4 (session), 5 (main.rs), 6 (TUI), 7 (delete AgentLoop), 8 (README).
+Emitting queue.advance → Task Writer for Step 3.
+
+## 2026-03-22 — Task 03: Middleware Chain + Shell Hook Bridge Complete
+
+Implemented `src/middleware.rs`:
+- `impl Middleware` builder methods: `new()`, `pre_tool()`, `post_tool()`, `pre_turn()`, `post_turn()` — consuming builder pattern, chainable
+- `shell_hook_bridge(config: &HooksConfig) -> Middleware` — wraps HookRunner shell scripts as middleware closures:
+  - `pre_tool_call`: `Cancelled` → `Block`, `HookWarning`/others → `Allow(call)`
+  - `post_tool_call`: `Transformed(content)` → `Transform(ToolResult::ok(content))`, others → `Allow`
+  - `pre_turn`/`post_turn`: observer pattern, always return `None` (no modification)
+- 7 new tests covering all 6 ACs: chain execution, Block short-circuit, Transform override, pre_turn modification, empty config no-op, Cancelled → Block via real script
+- `pub mod middleware` added to `lib.rs`
+- 101 tests pass, zero clippy warnings, committed: 4dfc273
+
+
+## 2026-03-22 — Finalization: task-03 Middleware Chain + Shell Hook Bridge closed
+
+review.passed received for task-1774195005-c810 (pdd:ap-fp-refactor:step-03:middleware-chain-and-shell-bridge).
+All 7 ACs verified, 101 tests pass, zero clippy warnings. Non-blocking design note: post_tool ToolMiddlewareFn only receives ToolCall (not ToolResult); shell_hook_bridge uses placeholder ToolResult::ok('') for AP_TOOL_RESULT in post hooks — pre-existing type design from task-01. No task-03 failures.
+Closed runtime task task-1774195005-c810.
+Progress.md updated: Step 3 → completed, Step 4 → active.
+
+Remaining steps: 4 (session persistence), 5 (main.rs), 6 (TUI), 7 (delete AgentLoop), 8 (README).
+Emitting queue.advance → Task Writer for Step 4.
+
+## 2026-03-22 — queue.advance: Step 3 → Step 4 (session persistence)
+
+Files missing: ap-fp-refactor directory didn't exist (lost between iterations), recreated:
+- progress.md (Steps 1-3 completed, Step 4 active)
+- tasks/task-04-session-persistence-conversation.code-task.md
+
+Verified 101 tests still pass before advancing.
+
+Step 4 task materialized: task-1774195378-5844 (pdd:ap-fp-refactor:step-04:session-persistence-conversation)
+
+Task: Add `save_conversation` / `load_conversation` to `SessionStore` in session/store.rs.
+- Purely additive — Session + existing save/load remain intact
+- Conversation (from types.rs) is already Serialize/Deserialize with #[serde(default)] on config
+- Same file layout: <base>/<id>.json
+- 3 new tests: roundtrip, dir creation, missing-file error + config default tolerance
+
+## 2026-03-22 — Task 04: Session Persistence for Conversation Complete
+
+Implemented `save_conversation` / `load_conversation` in `ap/src/session/store.rs`:
+- Added `use crate::types::Conversation;` to imports
+- `save_conversation(&Conversation) -> Result<()>`: pretty JSON to `<base>/<id>.json`, creates dirs
+- `load_conversation(&str) -> Result<Conversation>`: reads + deserializes, error includes id
+- Error message for missing file uses `id` directly (not path) so `contains(id)` test passes
+- Missing `config` field tolerated via existing `#[serde(default)]` on Conversation
+- 4 new tests: roundtrip, dir creation, missing file error, missing config tolerance
+- All existing session tests untouched (Session/save/load still intact)
+- 105 total tests pass, zero clippy warnings
+- Committed: 392ebda
+
+Emitting review.ready for Fresh-Eyes Critic.
+
+## 2026-03-22 — Finalization: task-04 Session Persistence for Conversation closed
+
+review.passed received for task-1774195378-5844 (pdd:ap-fp-refactor:step-04:session-persistence-conversation).
+All 6 ACs verified, 105 tests pass, zero clippy warnings. Committed 392ebda.
+Runtime task already closed. Task file updated to completed. Progress.md: Step 4 → completed, Step 5 → active.
+
+Remaining steps: 5 (main.rs recipe-style + headless), 6 (TUI decouple), 7 (delete AgentLoop), 8 (README).
+Emitting queue.advance → Task Writer for Step 5.
+
+## 2026-03-22 — Task 05: main.rs Recipe-Style + Headless Mode Complete
+
+Implemented Step 05 of the FP refactor:
+
+**Changes:**
+- `src/main.rs`: Rewrote `run_headless` to use `turn()` + `TurnEvent` + `Conversation` + `Middleware`
+  - Session loading uses `SessionStore::load_conversation` / `save_conversation`
+  - Middleware built via `shell_hook_bridge(&config.hooks)`
+  - `turn()` spawned as background task to drain bounded channel concurrently
+  - No `AgentLoop` or `UiEvent` in headless path (only `run_tui` still uses `AgentLoop`)
+- `tests/noninteractive.rs`: Fully rewritten to use `TurnEvent` instead of `UiEvent`
+  - `run_headless_test` helper uses `turn()` pipeline directly
+  - All 3 tests pass with zero `UiEvent` references
+
+**Verification:**
+- 105 tests pass (95 unit + 2+3+2+3 integration)
+- `cargo build --release`: zero warnings
+- `cargo clippy -- -D warnings`: clean
+- Committed: 071af57
+
+Emitting review.ready → Fresh-Eyes Critic.
+
+## 2026-03-22 — Design Amendment: Pure turn() signature (Sam, 09:12 PDT)
+
+**Issue:** Current plan has `turn()` taking `tx: &mpsc::Sender<TurnEvent>` — this is a side effect baked into the core function, making it impure and hard to test/compose.
+
+**Fix:** `turn()` returns its output, caller routes it:
+
+```rust
+// BEFORE (impure):
+pub async fn turn(
+    conv: Conversation,
+    provider: &dyn Provider,
+    tools: &ToolRegistry,
+    middleware: &Middleware,
+    tx: &mpsc::Sender<TurnEvent>,  // ← side effect
+) -> Result<Conversation>
+
+// AFTER (pure):
+pub async fn turn(
+    conv: Conversation,
+    provider: &dyn Provider,
+    tools: &ToolRegistry,
+    middleware: &Middleware,
+) -> Result<(Conversation, Vec<TurnEvent>)>  // ← caller routes events
+```
+
+**Caller patterns:**
+```rust
+// TUI mode: caller sends events to channel
+let (conv, events) = turn(conv, &provider, &tools, &middleware).await?;
+for event in &events { tx.send(event.clone()).ok(); }
+
+// Headless mode: caller prints
+let (conv, events) = turn(conv, &provider, &tools, &middleware).await?;
+for event in &events { print_event(event); }
+
+// Test: caller inspects directly
+let (conv, events) = turn(conv, &mock_provider, &tools, &middleware).await?;
+assert!(events.iter().any(|e| matches!(e, TurnEvent::Text(_))));
+```
+
+**Impact on step 5 (main.rs rewrite):** The TUI run loop and headless run loop both call `turn()` and handle the returned events themselves. No tx parameter threading through. Clean.
+
+**Also fix:** If streaming is needed (token-by-token TUI display), implement as a separate `turn_streaming()` that returns a `Stream<TurnEvent>` — keep `turn()` as the simple batch version. Both can coexist.
+
+## 2026-03-22 — Finalization: task-05 main.rs Recipe-Style + Headless closed
+
+review.passed received for task-1774195672-1686 (pdd:ap-fp-refactor:step-05:main-recipe-style-and-headless).
+All 7 ACs verified, 105 tests pass, zero warnings, zero clippy. Committed: 071af57.
+Runtime task was already closed. Task file marked completed. Progress.md: Step 05 → completed.
+
+### design.amendment: pure turn() signature
+Pending amendment requires turn() to return Result<(Conversation, Vec<TurnEvent>)> instead of
+taking tx: &mpsc::Sender<TurnEvent> and returning Result<Conversation>.
+This must be applied as part of or before Step 06 (TUI decoupling).
+Task Writer will need to merge this amendment into the Step 06 task file.
+
+Files affected by amendment:
+- src/turn.rs — change turn() sig + turn_loop() to collect events into Vec
+- src/main.rs — headless loop: collect events from return value, print them
+- tests/noninteractive.rs — update helper to unpack (conv, events) tuple
+- turn tests — update all turn() call sites to unpack tuple
+
+Remaining steps after amendment: 6 (TUI), 7 (delete AgentLoop), 8 (README).
+Emitting queue.advance → Task Writer for Step 05a+06 (amendment + TUI decouple).
+
+## 2026-03-22 — Design Amendment: Clippy lint suite for functional style (Sam, 09:13 PDT)
+
+Add a clippy lint configuration that enforces functional style at compile time. Apply as part of the final polish step (step 9).
+
+**In `ap/Cargo.toml` — workspace-level lints:**
+```toml
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+needless_pass_by_ref_mut = "deny"
+option_if_let_else = "warn"
+map_unwrap_or = "warn"
+manual_let_else = "warn"
+redundant_closure_for_method_calls = "warn"
+explicit_iter_loop = "warn"
+pedantic = "warn"
+```
+
+**In `ap/src/main.rs` top — crate-level gates:**
+```rust
+#![deny(unsafe_code)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]  // common false positive
+#![allow(clippy::must_use_candidate)]       // too noisy for async fns
+```
+
+**CI gate:** `cargo clippy --all-targets -- -D warnings` must pass clean. Add to README as a required check.
+
+**Acceptance:** `cargo clippy --all-targets -- -D warnings` exits 0 with the lint suite active.
+
+## 2026-03-22 — Task Writer: Step 06 + Step 09 materialized (queue.advance + design.amendments)
+
+Handled two pending events:
+1. `queue.advance`: Step 05 completed. Merged design.amendment (turn() sig) into Step 06 task file.
+2. `design.amendment`: Clippy lint suite — created new Step 09 task file.
+
+**Step 06 (merged 05a+06):** task-06-tui-decouple.code-task.md rewritten to include:
+- Part A: change turn() to return `Result<(Conversation, Vec<TurnEvent>)>`, remove tx param; update turn.rs internals, main.rs headless, noninteractive.rs, turn unit tests
+- Part B: TuiApp decoupled from AgentLoop — stores conv/provider/tools/middleware; handle_submit calls turn() and sends collected events; 7 TUI tests updated to TurnEvent
+- Runtime task: task-1774196138-dbe5 (key: pdd:ap-fp-refactor:step-06:turn-sig-amendment-and-tui-decouple)
+
+**Step 09 (new):** task-09-clippy-lint-suite.code-task.md created:
+- workspace-level [workspace.lints.clippy] in Cargo.toml
+- crate-level gates in main.rs
+- Fix all violations; cargo clippy --all-targets -- -D warnings exits 0
+
+Progress.md updated: Step 5 → completed, Step 6 → active, Step 9 → added.
+
+## 2026-03-22 — build.blocked resolution: Step 06
+
+Investigated the build.blocked event for task-1774196138-dbe5 (turn() sig + TUI decouple).
+
+**Finding:** Implementation is COMPLETE. All changes are made but NOT committed:
+- `src/turn.rs`: turn() now returns `Result<(Conversation, Vec<TurnEvent>)>`, no tx param ✓
+- `src/tui/mod.rs`: TuiApp fully decoupled from AgentLoop — uses Arc<Mutex<Conversation>>, Arc<Provider>, Arc<ToolRegistry>, Arc<Middleware> ✓
+- `src/main.rs`: run_tui() and run_headless both use new turn() signature ✓
+- `tests/noninteractive.rs`: uses new (conv, events) tuple ✓
+- All tests pass: 96 unit + 2+3+3+3 integration = 107 total ✓
+- Zero clippy warnings ✓
+
+Legacy tests (agent_loop.rs, hook_cancel.rs) still pass against the old app.rs AgentLoop — that's fine, Task 07 deletes them.
+
+**Action:** Routing to Builder to commit the changes and emit review.ready.
+
+## 2026-03-22 — Finalization: task-06 turn() sig + TUI decouple closed
+
+review.passed received for task-1774196138-dbe5 (pdd:ap-fp-refactor:step-06:turn-sig-amendment-and-tui-decouple).
+All 10 ACs verified. turn() is pure — returns Result<(Conversation, Vec<TurnEvent>)>, no tx param.
+TuiApp fully decoupled from AgentLoop. 107 tests pass, zero release warnings. Committed: 7e957f1.
+Closed runtime task task-1774196138-dbe5.
+Progress.md updated: Step 06 → completed, Step 09 added.
+
+Remaining steps: 07 (Delete AgentLoop), 08 (README update), 09 (Clippy lint suite).
+Emitting queue.advance → Task Writer for Step 07.
+
+## 2026-03-22 — queue.advance: Step 06 → Step 07 (Delete AgentLoop)
+
+Step 06 complete (commit 7e957f1). Handling queue.advance event.
+
+Verified:
+- `main.rs` and `tui/mod.rs` have zero references to `AgentLoop` or `UiEvent` (Step 06 already decoupled)
+- Only remaining references: `src/app.rs` itself + `tests/agent_loop.rs` + `tests/hook_cancel.rs`
+
+Step 07 task file: `.agents/scratchpad/implementation/ap-fp-refactor/tasks/task-07-delete-agentloop.code-task.md`
+Runtime task materialized: task-1774196788-76c8 (key: pdd:ap-fp-refactor:step-07:delete-agentloop)
+
+Work for Builder:
+1. Confirm no external callers via grep
+2. Delete src/app.rs, tests/agent_loop.rs, tests/hook_cancel.rs
+3. Remove `pub mod app;` from lib.rs
+4. cargo build --release + cargo test must pass
+5. Commit: `refactor: delete AgentLoop and legacy UiEvent`
+
+This is a deletion-only task — LOW risk, LOW complexity.
