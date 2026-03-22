@@ -77,9 +77,24 @@ impl ToolRegistry {
         self.tools.iter().find(|t| t.name() == name).map(|t| t.as_ref())
     }
 
+    /// Consuming builder — register a tool and return `self` (chainable).
+    ///
+    /// ```rust,ignore
+    /// let registry = ToolRegistry::new().with(ReadTool).with(WriteTool);
+    /// ```
+    pub fn with(mut self, tool: impl Tool + 'static) -> Self {
+        self.tools.push(Box::new(tool));
+        self
+    }
+
     /// Return all tool schemas (used to inject into Bedrock API calls).
     pub fn all_schemas(&self) -> Vec<serde_json::Value> {
         self.tools.iter().map(|t| t.schema()).collect()
+    }
+
+    /// Alias for `all_schemas()` — returns the JSON schema for every registered tool.
+    pub fn tool_schemas(&self) -> Vec<serde_json::Value> {
+        self.all_schemas()
     }
 }
 
@@ -112,5 +127,26 @@ mod tests {
         assert!(registry.find_by_name("edit").is_some());
         assert!(registry.find_by_name("bash").is_some());
         assert!(registry.find_by_name("nonexistent").is_none());
+    }
+
+    // AC5: ToolRegistry .with() builder chains
+    #[test]
+    fn registry_with_builder_chains_tools() {
+        let registry = ToolRegistry::new().with(ReadTool).with(WriteTool);
+        assert_eq!(registry.tool_schemas().len(), 2);
+    }
+
+    // AC5 (consuming): .with() returns Self — verified by chaining
+    #[test]
+    fn registry_with_builder_is_consuming() {
+        let r = ToolRegistry::new().with(ReadTool).with(WriteTool).with(EditTool);
+        assert_eq!(r.tool_schemas().len(), 3);
+    }
+
+    // AC6: with_defaults() still registers 4 tools
+    #[test]
+    fn registry_with_defaults_still_works() {
+        let registry = ToolRegistry::with_defaults();
+        assert_eq!(registry.tool_schemas().len(), 4);
     }
 }
