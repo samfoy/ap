@@ -131,13 +131,13 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Config: `[lsp] enabled = true, servers = { rust = "rust-analyzer", python = "pyright", typescript = "typescript-language-server" }`
     - TUI: diagnostics panel (toggleable, `d` key) shows current file errors inline
 
-14. [~] **Skill system** — ap discovers and loads "skills" from `~/.ap/skills/` and `./.ap/skills/`. Already merged.
+14. [x] **Skill system** — ap discovers and loads "skills" from `~/.ap/skills/` and `./.ap/skills/`. Already merged.
 
-15. [~] **Tool discovery** — Already merged.
+15. [x] **Tool discovery** — Already merged.
 
-16. [~] **Richer TUI** — Already merged.
+16. [x] **Richer TUI** — Already merged.
 
-17. [~] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
+17. [x] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
 
 18. [ ] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
