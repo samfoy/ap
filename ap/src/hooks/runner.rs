@@ -280,3 +280,46 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::NamedTempFile;
+    use crate::config::HooksConfig;
+    use crate::hooks::HookOutcome;
+    use super::HookRunner;
+
+    fn make_script(body: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        writeln!(f, "#!/bin/sh").unwrap();
+        writeln!(f, "{body}").unwrap();
+        let mut perms = f.as_file().metadata().unwrap().permissions();
+        perms.set_mode(0o755);
+        f.as_file().set_permissions(perms).unwrap();
+        f
+    }
+
+    #[test]
+    fn observer_hook_writes_messages_to_temp_file() {
+        // Script that checks file exists and reads its content
+        let script = make_script(
+            r#"[ -f "$AP_MESSAGES_FILE" ] && grep -q 'hello' "$AP_MESSAGES_FILE" && exit 0; exit 1"#
+        );
+        let mut config = HooksConfig::default();
+        config.pre_turn = Some(script.path().to_str().unwrap().to_string());
+        let runner = HookRunner::new(config);
+        let result = runner.run_observer_hook(
+            runner.config.pre_turn.as_deref(),
+            vec![("AP_MESSAGES_FILE".to_string(), r#"{"messages":["hello"]}"#.to_string())],
+        );
+        assert!(matches!(result, HookOutcome::Observed), "expected Observed, got {:?}", result);
+    }
+
+    #[test]
+    fn observer_hook_proceed_when_no_hook_configured() {
+        let runner = HookRunner::new(HooksConfig::default());
+        let result = runner.run_observer_hook(None, vec![]);
+        assert!(matches!(result, HookOutcome::Observed));
+    }
+}
