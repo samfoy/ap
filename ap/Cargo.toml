@@ -1,0 +1,61 @@
+[package]
+name = "ap"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal AI coding agent powered by AWS Bedrock"
+license = "MIT"
+
+[[bin]]
+name = "ap"
+path = "src/main.rs"
+
+[dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# HTTP client (reserved for future provider HTTP option)
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Config parsing
+toml = "0.8"
+
+# AWS Bedrock
+aws-sdk-bedrockruntime = "1"
+aws-config = "1"
+aws-credential-types = "1"
+
+# Async utilities (BoxFuture, BoxStream)
+futures = "0.3"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Scripting extensions (sync feature required for Send+Sync)
+rhai = { version = "1", features = ["sync"] }
+
+# Dylib loading
+libloading = "0.8"
+
+# Temp files for hooks
+tempfile = "3"
+
+# Home directory resolution
+dirs = "5"
+
+# Session IDs
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"

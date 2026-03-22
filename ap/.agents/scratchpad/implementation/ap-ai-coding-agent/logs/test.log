@@ -1,0 +1,25 @@
+   Compiling ap v0.1.0 (/Users/sam.painter/Projects/ap/ap)
+warning: associated function `load` is never used
+   --> src/config.rs:156:12
+    |
+152 | impl AppConfig {
+    | -------------- associated function in this implementation
+...
+156 |     pub fn load() -> Result<AppConfig> {
+    |            ^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ap` (bin "ap" test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.50s
+     Running unittests src/main.rs (target/debug/deps/ap-685c4124e3d246db)
+
+running 5 tests
+test config::tests::test_defaults_when_no_file ... ok
+test config::tests::test_invalid_toml_returns_error ... ok
+test config::tests::test_load_project_config ... ok
+test config::tests::test_global_config_merged ... ok
+test config::tests::test_project_overrides_global ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

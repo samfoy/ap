@@ -1,0 +1,51 @@
+# ap.toml — ap AI Coding Agent configuration
+# Place this file in your project root as `ap.toml` (project-level config).
+# Global config lives at ~/.ap/config.toml.
+# Project config overrides global config when both are present.
+
+[provider]
+# AI backend to use. Currently only "bedrock" is supported.
+backend = "bedrock"
+# Model identifier to use with the backend.
+model = "us.anthropic.claude-sonnet-4-6"
+# AWS region for Bedrock API calls.
+region = "us-west-2"
+
+[tools]
+# All built-in tools are enabled by default.
+# Future: per-tool enable/disable flags will go here.
+# parallel = false  # v2 only — sequential execution in v1
+
+[hooks]
+# Shell commands to run at lifecycle points.
+# Leave unset to disable a hook. Relative paths are resolved from the project root.
+# Hook scripts receive context via environment variables (see README.md for details).
+
+# Run before any tool executes. Non-zero exit cancels the tool call.
+# pre_tool_call = "~/.ap/hooks/pre_tool.sh"
+
+# Run after any tool executes. stdout replaces the tool result content.
+# post_tool_call = "~/.ap/hooks/post_tool.sh"
+
+# Run before the agent sends a turn to the LLM (read-only observer).
+# pre_turn = "~/.ap/hooks/pre_turn.sh"
+
+# Run after the agent receives a response from the LLM (read-only observer).
+# post_turn = "~/.ap/hooks/post_turn.sh"
+
+# Run on any agent error.
+# on_error = "~/.ap/hooks/on_error.sh"
+
+[extensions]
+# Extensions are auto-discovered from:
+#   ~/.ap/extensions/   (global)
+#   ./.ap/extensions/   (project-local)
+#
+# Supported extension types:
+#   .rhai   — Rhai scripting language extensions (recommended, safe)
+#   .dylib  — Compiled Rust dynamic library extensions (macOS)
+#   .so     — Compiled Rust dynamic library extensions (Linux)
+#
+# WARNING: Dylib extensions execute arbitrary native code. Only load dylibs
+# you trust. Any toolchain or crate version mismatch between ap and the
+# extension will cause undefined behavior. Prefer Rhai extensions.

@@ -1,4 +1,5 @@
 mod config;
+pub mod tools;
 
 use clap::Parser;
 use config::AppConfig;
