@@ -11,7 +11,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 ## 🔴 Active
 
-- [~] **FP Refactor** — Immutable Conversation, pure turn() pipeline, Rust middleware chain replacing shell hooks
+- [x] **FP Refactor** — Immutable Conversation, pure turn() pipeline, Rust middleware chain replacing shell hooks
 
 ---
 
