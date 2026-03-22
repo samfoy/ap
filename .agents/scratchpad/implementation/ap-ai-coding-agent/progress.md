@@ -1,7 +1,7 @@
 # Implementation Progress: ap-ai-coding-agent
 
 ## Current Step
-Step 11: Non-interactive mode (-p flag)
+Step 12: README.md
 
 ## Completed Steps
 - Step 1: Cargo.toml + project scaffold ✓ (task-01-cargo-toml-project-scaffold.code-task.md)
@@ -14,8 +14,11 @@ Step 11: Non-interactive mode (-p flag)
 - Step 8: Session persistence ✓ (task-08-session-persistence.code-task.md) — 69 tests pass, SessionStore instance struct, with_session_store + autosave test, zero warnings
 - Step 10 (cleanup): Remove extensions system ✓ (task-10-remove-extensions-cleanup.code-task.md) — 77 tests pass, extensions deleted, rhai+libloading removed, zero warnings
 
+- Step 9: Ratatui TUI ✓ (task-09-ratatui-tui.code-task.md) — 85 tests pass, 4-pane layout, vim keybindings, help overlay, zero warnings
+- Step 11: Non-interactive mode ✓ (task-11-non-interactive-mode.code-task.md) — 80 tests pass, -p flag, headless mode, exit codes, MockErrorProvider for error path, zero warnings
+
 ## Active Wave
-- Step 11 (non-interactive mode) runtime task: pdd:ap-ai-coding-agent:step-11:non-interactive-mode
+- Step 12 (README) runtime task: pdd:ap-ai-coding-agent:step-12:readme (task-1774192755-4bf9)
 
 ## Notes
 - Task-01 completed: cargo build --release clean, ap --version=0.1.0, all deps declared, 2 tests pass.

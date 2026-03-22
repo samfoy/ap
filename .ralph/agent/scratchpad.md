@@ -604,3 +604,130 @@ Fix:
   }
 
 ### Decision: review.rejected
+
+## 2026-03-22 — Task 11: Non-Interactive Mode — FAIL-1/FAIL-2 Fixed (2nd attempt)
+
+Both review.rejected FAILs addressed:
+
+**FAIL-1 (headless_emits_error_on_provider_failure was false positive):**
+- Added `MockErrorProvider` struct that returns `Err(ProviderError::Aws("something failed"))` in stream
+- Modified `run_turn` in app.rs: replaced `event?` with explicit match that emits `UiEvent::Error` before returning `Err`
+- Test now: (a) verifies `run_turn` returns `Err`, (b) verifies `UiEvent::Error` is in the channel, (c) verifies error message contains "something failed"
+
+**FAIL-2 (run_turn Err silently discarded):**
+- Changed `if let Err(e) = agent_handle.await` to `match agent_handle.await` with 3 arms:
+  - `Ok(Ok(()))` → no-op
+  - `Ok(Err(e))` → eprintln + exit_code = 1
+  - `Err(e)` (JoinError/panic) → eprintln + exit_code = 1
+
+Results: 80 tests pass (including 3 noninteractive.rs tests), zero warnings, release build clean.
+Committed: 33f3c6f
+
+## 2026-03-22 — Finalization: task-11 Non-Interactive Mode closed
+
+review.passed received for task-1774192237-3a1c (pdd:ap-ai-coding-agent:step-11:non-interactive-mode).
+Both FAILs fixed: MockErrorProvider for AC3, match agent_handle.await for FAIL-2.
+Closed runtime task task-1774192237-3a1c.
+
+Only remaining task: task-11-readme.code-task.md (status: pending).
+Emitting queue.advance → Task Writer for README.
+
+## 2026-03-22 — Task 12: README.md Complete
+
+Written ap/README.md covering all required sections:
+- ap description + features
+- Installation from source (cargo install --path .)
+- Quick start (TUI + non-interactive)
+- AWS Setup: credentials, IAM permissions, region/model config
+- Configuration: full ap.toml reference ([provider], [tools], [hooks] — no [extensions])
+- Built-in Tools: table with all 4 tools and their parameters
+- Hooks System: lifecycle table, env vars (verified against runner.rs + app.rs), shell examples
+- Session Management: --session flag, auto-save, file location/format
+- Non-Interactive Mode: -p flag, exit codes, scripting examples
+- TUI Keybindings: normal mode + insert mode tables + /help command
+- Contributing: test/build/lint commands, architecture pointer, project layout
+
+All AC verified:
+- AC2: Config keys match AppConfig fields exactly; no [extensions] section
+- AC3: AP_TOOL_NAME, AP_TOOL_PARAMS, AP_TOOL_RESULT, AP_TOOL_IS_ERROR, AP_MESSAGES_FILE — exact match with runner.rs + app.rs
+- AC4: grep for "extension|rhai|dylib|libloading" → zero matches
+- Committed: 2d3f8a4
+
+Emitting review.ready for Fresh-Eyes Critic.
+
+## 2026-03-22 — Fresh-Eyes Review: task-12 README.md
+
+Reviewed task-1774192755-4bf9 (pdd:ap-ai-coding-agent:step-12:readme).
+
+### Positive findings:
+- Zero extension/rhai/dylib/libloading references ✓
+- All hook env vars match runner.rs exactly (AP_TOOL_NAME, AP_TOOL_PARAMS, AP_TOOL_RESULT, AP_TOOL_IS_ERROR, AP_MESSAGES_FILE) ✓
+- Config keys match AppConfig struct fields exactly ✓
+- TUI keybindings match events.rs implementation ✓
+- All 80 tests pass, release build clean ✓
+
+### FAIL-1: Session Management section is behaviorally inaccurate
+
+README states:
+  "ap automatically saves every conversation to ~/.ap/sessions/<session-id>.json."
+  "Starting a new session: ap — generates a new UUID session ID"
+
+Reality (from main.rs):
+  When `--session` is NOT provided, `session = None` is passed to AgentLoop.
+  `autosave_session` is a no-op when `self.session = None`.
+  Running `ap` without `--session` produces NO session file, NO UUID generation.
+  Sessions only persist when `--session <id>` is explicitly provided.
+
+The README implies automatic session creation on every invocation, but it's opt-in via `--session`.
+This violates AC5: "no behavioral claims are inaccurate or stale."
+
+Fix: Correct the Session Management section to accurately describe the opt-in nature:
+  - Sessions are only saved when `--session <id>` is provided
+  - Running ap without --session is ephemeral (no persistence)
+  - Starting a new session means providing a new ID (or letting ap create a fresh one from the ID you give)
+
+Decision: review.rejected
+
+## 2026-03-22 — Task 12: README.md — FAIL-1 Fixed (2nd attempt)
+
+Addressed review.rejected FAIL-1:
+
+**FAIL-1 (Session Management section behaviorally inaccurate):**
+- Removed claim "ap automatically saves every conversation"
+- Removed false examples of `ap` (no flag) generating a UUID session
+- Rewrote Session Management section: persistence is **opt-in** via `--session <id>`
+- Added explicit "Ephemeral (no persistence)" section showing that running without --session saves nothing
+- Fixed Quick Start section: "Resume a session" → "Start or resume a named session"
+- Fixed feature bullet: "save and resume conversations by ID" → "opt-in save and resume via --session <id>"
+
+All changes match main.rs behavior: session=None when --session absent, autosave_session is no-op for None.
+Committed: 7db2d61
+
+## 2026-03-22 — Finalization: task-12 README.md closed (2nd attempt)
+
+review.passed received for task-1774192755-4bf9 (pdd:ap-ai-coding-agent:step-12:readme).
+FAIL-1 fix verified: session persistence correctly documented as opt-in via --session; ephemeral path documented.
+Closed runtime task task-1774192755-4bf9.
+
+All code-task files: completed (task-01 through task-11-readme, plus task-10-remove-extensions-cleanup).
+No open runtime tasks remain.
+Emitting implementation.ready → Validator.
+
+## 2026-03-22 — Validation Complete: ap-ai-coding-agent PASSED
+
+Validator ran full suite autonomously:
+- All 12 code tasks status: completed ✓
+- 80 tests pass, 0 failures ✓
+- cargo build --release: clean, zero warnings ✓
+- cargo clippy -D warnings: clean ✓
+- YAGNI/KISS/Idiomatic: all pass ✓
+- E2E manual tests via real Bedrock API:
+  - ap -p "What is 2+2?" → 4, exit 0 ✓
+  - File write/read/edit tools all verified ✓
+  - Session save + resume verified ✓
+  - Hooks (pre_tool_call) fire correctly ✓
+  - TUI launches, 4-pane layout renders, mode switching works ✓
+  - Adversarial: edit-no-match handled gracefully ✓
+  - Extensions fully removed, zero references ✓
+- Validation runtime task task-1774193161-d35f closed
+- Emitting validation.passed
