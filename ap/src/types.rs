@@ -20,6 +20,10 @@ pub struct Conversation {
     pub messages: Vec<Message>,
     #[serde(default)]
     pub config: AppConfig,
+    /// Transient system prompt injected by skill middleware each turn.
+    /// Not persisted to session files — skills are re-scored on every turn.
+    #[serde(skip)]
+    pub system_prompt: Option<String>,
 }
 
 impl Conversation {
@@ -33,6 +37,7 @@ impl Conversation {
             model: model.into(),
             messages: Vec::new(),
             config,
+            system_prompt: None,
         }
     }
 
@@ -43,6 +48,16 @@ impl Conversation {
             role: Role::User,
             content: vec![MessageContent::Text { text: content.into() }],
         });
+        self
+    }
+
+    /// Return a new `Conversation` with the given system prompt set.
+    ///
+    /// The `system_prompt` field is transient (`#[serde(skip)]`) — it is never
+    /// written to session files and must be re-injected on every turn by the
+    /// skill injection middleware.
+    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
         self
     }
 }
@@ -235,5 +250,31 @@ mod tests {
         assert_eq!(conv.id, "id-1");
         assert_eq!(conv.model, "model-a");
         assert!(conv.messages.is_empty());
+    }
+
+    // AC-Step1-1: with_system_prompt sets the field
+    #[test]
+    fn conversation_with_system_prompt_sets_field() {
+        let conv = Conversation::new("id-1", "model-a", dummy_config())
+            .with_system_prompt("be helpful");
+        assert_eq!(conv.system_prompt, Some("be helpful".to_string()));
+    }
+
+    // AC-Step1-2: system_prompt is None by default
+    #[test]
+    fn conversation_system_prompt_none_by_default() {
+        let conv = Conversation::new("id-1", "model-a", dummy_config());
+        assert!(conv.system_prompt.is_none());
+    }
+
+    // AC-Step1-3: system_prompt is skipped in serde round-trip
+    #[test]
+    fn conversation_system_prompt_not_serialized() {
+        let conv = Conversation::new("id-1", "model-a", dummy_config())
+            .with_system_prompt("secret skills");
+        let json = serde_json::to_string(&conv).expect("serialize");
+        assert!(!json.contains("secret skills"), "system_prompt should not appear in JSON");
+        let back: Conversation = serde_json::from_str(&json).expect("deserialize");
+        assert!(back.system_prompt.is_none(), "deserialized system_prompt must be None");
     }
 }

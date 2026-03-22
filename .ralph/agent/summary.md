@@ -2,7 +2,7 @@
 
 **Status:** Completed successfully
 **Iterations:** 45
-**Duration:** 1h 15m 56s
+**Duration:** 1h 8m 22s
 
 ## Tasks
 
@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-456d4e5: chore: close out ap FP refactor — validation artifacts and task state
+c577b5e: feat(skills): offline TF-IDF skill injection via system prompt

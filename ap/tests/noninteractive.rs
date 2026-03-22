@@ -36,6 +36,7 @@ impl Provider for MockProvider {
         &'a self,
         _messages: &'a [Message],
         _tools: &'a [serde_json::Value],
+        _system_prompt: Option<&'a str>,
     ) -> BoxStream<'a, Result<StreamEvent, ProviderError>> {
         let events = self
             .scripts
@@ -111,6 +112,7 @@ impl Provider for MockErrorProvider {
         &'a self,
         _messages: &'a [Message],
         _tools: &'a [serde_json::Value],
+        _system_prompt: Option<&'a str>,
     ) -> BoxStream<'a, Result<StreamEvent, ProviderError>> {
         let err = ProviderError::Aws(self.message.clone());
         Box::pin(stream::iter(vec![Err(err)]))
