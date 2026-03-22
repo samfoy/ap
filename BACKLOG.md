@@ -37,7 +37,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Requires: Provider abstraction + AGENTS.md + stable non-interactive mode
     - Milestone: ap is the agent driving its own development loop
 
-4. [~] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
+4. [x] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
 
 5. [x] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
     - Every `ap` invocation creates a named session immediately — name auto-generated from first user message (short slug, e.g. `refactor-auth-module-2026-03-22`)

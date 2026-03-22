@@ -164,3 +164,15 @@ cac2638 chore(monitor): complete Image support
 e443a5c chore(monitor): complete LSP integration
 7e38ff7 chore(monitor): start Image support
 160ba78 chore(monitor): start LSP integration
+
+## 2026-03-22 16:51 — Conversation context management
+Review: It landed cleanly. All 181 tests pass, clippy is clean, and the feature is coherently contained in a new `context.rs` module with proper integration across `config`, `types`, `main`, and both TUI paths.
+
+The one notable gap: token estimation is a `chars / 4` heuristic rather than using the actual token counts Bedrock returns in its usage metadata. That means the compression trigger threshold can be materially wrong for code-heavy or tool-result-heavy conversations, potentially firing too early or (worse) too late. Worth wiring up real usage counts from `StreamEvent` before relying on this in production.
+Commits:
+93d9744 chore: auto-commit before merge (loop primary)
+2947a78 feat(context): add conversation context compression
+3b38041 chore: init Conversation context management
+2297a12 chore(monitor): clean slate — remove all stale worktrees and state
+d3e109d chore(monitor): trim memory context from prompts, bump timeout to 300s
+03aee8b chore(monitor): complete Provider abstraction
