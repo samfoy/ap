@@ -231,7 +231,8 @@ End with: Output LOOP_COMPLETE when all acceptance criteria are met and the proj
 Output only the PROMPT.md content."""
 
     r = subprocess.run(
-        ["pi", "--provider", "amazon-bedrock",
+        [AP_DIR / "ap" / "target" / "release" / "ap",
+         "--provider", "amazon-bedrock",
          "--model", "us.anthropic.claude-sonnet-4-6",
          "--print", context],
         capture_output=True, text=True, env={**os.environ}, timeout=300
@@ -316,7 +317,8 @@ def review(title, wt_path):
     try:
         commits = run("git log --oneline -8", cwd=wt_path).stdout.strip()
         r = subprocess.run(
-            ["pi", "--provider", "amazon-bedrock",
+            [AP_DIR / "ap" / "target" / "release" / "ap",
+             "--provider", "amazon-bedrock",
              "--model", "us.anthropic.claude-sonnet-4-6",
              "--print",
              f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"],
