@@ -1,16 +1,17 @@
 # ap — AI Coding Agent
 
-A terminal AI coding agent written in Rust. Powered by AWS Bedrock (Claude), with a ratatui TUI, shell lifecycle hooks, session persistence, and a non-interactive mode for scripting.
+A terminal AI coding agent written in Rust. Powered by AWS Bedrock (Claude), with a ratatui TUI, a composable middleware chain, shell lifecycle hooks, session persistence, and a non-interactive mode for scripting.
 
 ---
 
 ## Features
 
 - **Streaming AI responses** via AWS Bedrock (Anthropic Claude)
-- **4 built-in tools**: read, write, edit, bash — fully integrated into the agent loop
+- **4 built-in tools**: read, write, edit, bash — fully integrated into the turn pipeline
 - **Ratatui TUI** with conversation panel, live tool activity, and vim-style keybindings
 - **Non-interactive mode** (`-p`) for scripting and use by other agents
-- **Shell lifecycle hooks** — pre/post tool call, pre/post turn, on error
+- **Composable middleware chain** — intercept, block, or transform tool calls with Rust closures
+- **Shell lifecycle hooks** — pre/post tool call, pre/post turn, on error (wrapped as middleware)
 - **Session persistence** — opt-in save and resume of conversations via `--session <id>`
 - **Layered config** — global (`~/.ap/config.toml`) + project (`ap.toml`) with field-level merge
 
@@ -165,9 +166,130 @@ All four tools are enabled by default and available to the agent in every turn.
 
 ---
 
+## Architecture
+
+`ap` is built as a functional pipeline. Each agent turn is a pure data transformation with no hidden state:
+
+```rust
+pub async fn turn(
+    conv: Conversation,
+    provider: &dyn Provider,
+    tools: &ToolRegistry,
+    middleware: &Middleware,
+) -> Result<(Conversation, Vec<TurnEvent>)>
+```
+
+`turn()` takes an immutable `Conversation` (with the user message already appended) and returns the updated `Conversation` plus a `Vec<TurnEvent>` — no side effects. The caller routes events to the TUI channel or stdout.
+
+Internally the pipeline is a sequence of pure steps:
+1. `apply_pre_turn(conv, middleware)` — run pre-turn middleware
+2. `stream_completion(conv, provider)` — stream LLM response, collect events and tool calls
+3. For each tool call: run pre-tool middleware chain → execute tool → run post-tool middleware chain
+4. Append assistant message and tool results to conversation
+5. Loop until no more tool calls are pending
+6. `apply_post_turn(conv, middleware)` — run post-turn middleware
+
+### Conversation
+
+`Conversation` is an immutable value type — each turn consumes the old value and returns a new one:
+
+```rust
+pub struct Conversation {
+    pub id: String,
+    pub model: String,
+    pub messages: Vec<Message>,
+    pub config: AppConfig,
+}
+```
+
+Build a new turn by calling `conv.with_user_message(input)`, which returns a new `Conversation` with the user message appended.
+
+### TurnEvent
+
+Both the TUI and headless mode consume the same `TurnEvent` stream:
+
+```rust
+pub enum TurnEvent {
+    TextChunk(String),                        // streamed text fragment
+    ToolStart { name: String, params: Value },
+    ToolComplete { name: String, result: String },
+    TurnEnd,
+    Error(String),
+}
+```
+
+---
+
+## Middleware API
+
+The `Middleware` chain is the primary extension point. Add Rust closures to intercept, block, or transform tool calls at any point in the pipeline.
+
+```rust
+pub struct Middleware {
+    pub pre_turn:  Vec<TurnMiddlewareFn>,   // Fn(&Conversation) -> Option<Conversation>
+    pub post_turn: Vec<TurnMiddlewareFn>,
+    pub pre_tool:  Vec<ToolMiddlewareFn>,   // Fn(ToolCall) -> ToolMiddlewareResult
+    pub post_tool: Vec<ToolMiddlewareFn>,
+}
+```
+
+`ToolMiddlewareResult` controls what happens to each tool call:
+
+```rust
+pub enum ToolMiddlewareResult {
+    Allow(ToolCall),      // pass through (possibly modified)
+    Block(String),        // cancel — the string is returned to Claude as the result
+    Transform(ToolResult),// skip execution, return this result directly
+}
+```
+
+### Builder pattern
+
+Chain middleware in `main.rs` using the consuming builder API:
+
+```rust
+let middleware = Middleware::new()
+    .pre_tool(|call| {
+        // Log every tool call
+        eprintln!("[tool] {}: {}", call.name, call.params);
+        ToolMiddlewareResult::Allow(call)
+    })
+    .pre_tool(|call| {
+        // Block dangerous bash commands
+        if call.name == "bash" {
+            let cmd = call.params["command"].as_str().unwrap_or("");
+            if cmd.contains("rm -rf") {
+                return ToolMiddlewareResult::Block("rm -rf is not allowed".into());
+            }
+        }
+        ToolMiddlewareResult::Allow(call)
+    });
+```
+
+### Pre-turn middleware
+
+Turn middleware receives a `&Conversation` and returns `Option<Conversation>`. Return `None` to leave the conversation unchanged, or `Some(new_conv)` to replace it:
+
+```rust
+let middleware = Middleware::new()
+    .pre_turn(|conv| {
+        // Observe the conversation before each LLM call
+        eprintln!("[turn] {} messages so far", conv.messages.len());
+        None // no modification
+    });
+```
+
+### Multiple middleware functions
+
+All middleware functions in a chain run in order. For pre-tool middleware, the first `Block` or `Transform` result short-circuits the chain — subsequent middleware is not called.
+
+---
+
 ## Hooks System
 
-Hooks are shell scripts executed at lifecycle points in the agent loop. Configure hook paths in `ap.toml` or `~/.ap/config.toml`. Missing or unconfigured hooks are silently skipped.
+Shell hooks are the configuration-based extension point. Under the hood, configured hook scripts are **automatically wrapped as `Middleware` closures** at startup via `shell_hook_bridge()`. This means shell hooks and Rust middleware coexist in the same chain — hooks are not a separate system.
+
+Configure hook paths in `ap.toml` or `~/.ap/config.toml`. Missing or unconfigured hooks are silently skipped.
 
 ### Lifecycle events
 
@@ -273,16 +395,18 @@ ap -p "one-off question"    # non-interactive without --session is also ephemera
 
 ### Session file format
 
-Sessions are stored as JSON at `~/.ap/sessions/<id>.json`:
+Sessions are stored as serialized `Conversation` values at `~/.ap/sessions/<id>.json`:
 
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "created_at": "2026-03-22T14:30:00Z",
+  "id": "my-project",
   "model": "us.anthropic.claude-sonnet-4-6",
-  "messages": [ ... ]
+  "messages": [ ... ],
+  "config": { ... }
 }
 ```
+
+The `Conversation` type is fully serializable — `save_conversation` / `load_conversation` in `SessionStore` handle the JSON encoding. The `config` field uses `#[serde(default)]` so sessions saved without a config field load cleanly with defaults.
 
 ---
 
@@ -375,7 +499,7 @@ cargo clippy -- -D warnings
 
 ### Architecture
 
-See `.agents/scratchpad/implementation/ap-ai-coding-agent/design.md` for the full design document, including component diagrams, hook protocol details, and the message format used with Bedrock.
+`main.rs` is the composition root — it wires tools, middleware, provider, and conversation together. There is no extension system: to add new behavior, edit the source. The pipeline is intentionally transparent.
 
 ### Project layout
 
@@ -385,8 +509,10 @@ ap/
 ├── ap.toml.example          # Annotated config template
 ├── README.md
 └── src/
-    ├── main.rs              # CLI entry point (clap), TUI/headless dispatch
-    ├── app.rs               # AgentLoop, conversation state, tool dispatch
+    ├── main.rs              # CLI entry point — wires tools, middleware, provider; TUI/headless dispatch
+    ├── types.rs             # Core types: Conversation, TurnEvent, ToolCall, Middleware
+    ├── turn.rs              # Pure turn() pipeline function
+    ├── middleware.rs        # Middleware builder API + shell_hook_bridge()
     ├── config.rs            # AppConfig, layered TOML loading
     ├── provider/
     │   ├── mod.rs           # Provider trait, StreamEvent, Message types
@@ -401,10 +527,10 @@ ap/
     │   ├── mod.rs           # HookOutcome enum
     │   └── runner.rs        # HookRunner, shell exec, env injection
     ├── tui/
-    │   ├── mod.rs           # TuiApp, AppMode, UiEvent
+    │   ├── mod.rs           # TuiApp — wired to TurnEvent, no AgentLoop dependency
     │   ├── ui.rs            # ratatui layout and rendering
     │   └── events.rs        # Keyboard event handling
     └── session/
         ├── mod.rs           # Session struct
-        └── store.rs         # SessionStore, save/load JSON
+        └── store.rs         # SessionStore: save/load Conversation as JSON
 ```
