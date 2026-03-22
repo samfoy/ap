@@ -49,7 +49,7 @@ impl Tool for BashTool {
             let exit_code = output.status.code().unwrap_or(-1);
 
             // Always is_error: false — non-zero exit is captured, not a tool error
-            ToolResult::ok(format!("{}{}\nexit: {}", stdout, stderr, exit_code))
+            ToolResult::ok(format!("{}\n{}\nexit: {}", stdout, stderr, exit_code))
         })
     }
 }
@@ -93,6 +93,26 @@ mod tests {
         // Non-zero exit is captured, NOT a tool-level error
         assert!(!result.is_error);
         assert!(result.content.contains("exit: 1"));
+    }
+
+    #[tokio::test]
+    async fn test_bash_stdout_stderr_separated_without_trailing_newline() {
+        // printf produces no trailing newline; stdout and stderr must still be
+        // on separate lines so they don't concatenate into a single run-on word.
+        let result = BashTool
+            .execute(serde_json::json!({
+                "command": "printf 'nostdoutnewline'; printf 'nostderrnewline' >&2"
+            }))
+            .await;
+        assert!(!result.is_error);
+        // The two strings must NOT be mashed together on the same line
+        assert!(
+            !result.content.contains("nostdoutnewlinenosterr"),
+            "stdout and stderr concatenated: {}",
+            result.content
+        );
+        assert!(result.content.contains("nostdoutnewline"), "missing stdout: {}", result.content);
+        assert!(result.content.contains("nostderrnewline"), "missing stderr: {}", result.content);
     }
 
     #[tokio::test]
