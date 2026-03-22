@@ -48,3 +48,15 @@ f4db103 feat(monitor): robust restart — state persistence, stall detection, co
 6a6e0e7 chore(backlog): mark skill-system, tool-discovery, richer-tui as complete
 6b50e4f chore(backlog): reorder for bootstrap-first — AGENTS.md and self-hosting promoted to top
 13e159b chore(backlog): add Kiro provider with full auth/API implementation notes
+
+## 2026-03-22 15:08 — Session management UX
+Review: **No — it didn't land.** The log you shared ends at `3ec5824 (start Self-hosting)`, which is *before* the `e5bce2e (start Session management UX)` commit — meaning Session management UX was queued after this batch and hasn't been worked on yet. The seven commits shown are entirely monitor infrastructure, AGENTS.md support, and backlog housekeeping, with zero touches to `src/session/` or any session UX code.
+
+The gap is straightforward: the monitor picked up other backlog items (self-hosting, AGENTS.md) before getting to the session work. Session management UX is still pending.
+Commits:
+3ec5824 chore(monitor): start Self-hosting (ap builds ap)
+acac779 chore(monitor): complete AGENTS.md support
+f4db103 feat(monitor): robust restart — state persistence, stall detection, conflict recovery, push on merge, heartbeat, retry prompts
+6a6e0e7 chore(backlog): mark skill-system, tool-discovery, richer-tui as complete
+6b50e4f chore(backlog): reorder for bootstrap-first — AGENTS.md and self-hosting promoted to top
+13e159b chore(backlog): add Kiro provider with full auth/API implementation notes

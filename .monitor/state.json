@@ -1,9 +1,4 @@
 {
-  "Self-hosting (ap builds ap)": {
-    "wt": "/Users/sam.painter/Projects/ap-worktrees/self-hosting-ap-builds-ap",
-    "started_at": 1774217246.6652641,
-    "last_restart_at": 0
-  },
   "Session management UX": {
     "wt": "/Users/sam.painter/Projects/ap-worktrees/session-management-ux",
     "started_at": 1774217249.910028,

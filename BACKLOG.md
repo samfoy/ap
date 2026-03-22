@@ -39,7 +39,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 4. [~] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
 
-5. [~] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
+5. [x] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
     - Every `ap` invocation creates a named session immediately — name auto-generated from first user message (short slug, e.g. `refactor-auth-module-2026-03-22`)
     - `--session <name>` to give an explicit name at startup
     - Sessions saved to `~/.ap/sessions/<name>.json` after every turn

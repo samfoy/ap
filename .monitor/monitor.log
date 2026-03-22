@@ -46,3 +46,9 @@ The gap is concrete: BACKLOG.md marks AGENTS.md support as `[~]` (in progress) b
 The concrete gap: the three gating prerequisites from the backlog entry — Provider abstraction, AGENTS.md injection, and stable `--print` mode — are themselves incomplete (AGENTS.md was flagged as phantom progress in the previous review entry), so the flip of `cli.backend` to `ap` was never attempted. The monitor got more robust, but ap is still not driving its own loop.
 [15:08:18] Merging feature/self-hosting-ap-builds-ap into main...
 [15:08:18] Merged and cleaned up worktree for: Self-hosting (ap builds ap)
+[15:08:21] LOOP_COMPLETE: Session management UX
+[15:08:36] Review: **No — it didn't land.** The log you shared ends at `3ec5824 (start Self-hosting)`, which is *before* the `e5bce2e (start Session management UX)` commit — meaning Session management UX was queued after this batch and hasn't been worked on yet. The seven commits shown are entirely monitor infrastructure, AGENTS.md support, and backlog housekeeping, with zero touches to `src/session/` or any session UX code.
+
+The gap is straightforward: the monitor picked up other backlog items (self-hosting, AGENTS.md) before getting to the session work. Session management UX is still pending.
+[15:08:36] Merging feature/session-management-ux into main...
+[15:08:36] Merged and cleaned up worktree for: Session management UX
