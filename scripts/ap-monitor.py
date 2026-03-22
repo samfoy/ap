@@ -132,9 +132,9 @@ The prompt should include:
 Output only the PROMPT.md content, no preamble.
 """
     r = subprocess.run(
-        ["pi", "--print", context],
+        ["pi", "--provider", "amazon-bedrock", "--model", "us.anthropic.claude-sonnet-4-6", "--print", context],
         capture_output=True, text=True,
-        env={**__import__("os").environ, "AWS_PROFILE": "default"}
+        env={**__import__("os").environ}
     )
     if r.returncode == 0 and r.stdout.strip():
         PROMPT.write_text(r.stdout.strip())
@@ -225,6 +225,10 @@ def main():
                     spawn_ralph_loop()
                 else:
                     log("Failed to generate prompt, will retry next cycle")
+                    # Reset the in-progress marker so we retry same item
+                    mark_backlog_complete(title)  # undo [~] → back to [ ]
+                    text = BACKLOG.read_text()
+                    BACKLOG.write_text(text.replace(f"[x] **{title}**", f"[ ] **{title}**"))
                     current_item = None
 
         except Exception as e:
