@@ -33,3 +33,6 @@ The gap is concrete: BACKLOG.md marks AGENTS.md support as `[~]` (in progress) b
 [15:07:23] Conflict info saved to /Users/sam.painter/Projects/ap/.monitor/conflicts/conversation-context-management.md. Skipping Conversation context management for now.
 [15:07:23] Starting: Self-hosting (ap builds ap)
 [15:07:23] Created worktree: /Users/sam.painter/Projects/ap-worktrees/self-hosting-ap-builds-ap (feature/self-hosting-ap-builds-ap)
+[15:07:26] Ralph running for Self-hosting (ap builds ap)
+[15:07:26] Starting: Session management UX
+[15:07:26] Created worktree: /Users/sam.painter/Projects/ap-worktrees/session-management-ux (feature/session-management-ux)
