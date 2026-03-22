@@ -409,3 +409,38 @@ review.passed received for task-07 agent-loop (no runtime task ID — was alread
 Updated task-07-agent-loop.code-task.md to status: completed.
 Tasks 01-07 all completed. Tasks 08-11 remain pending.
 Emitting queue.advance → Task Writer for task-08 (session persistence).
+
+## 2026-03-22 — Task 08: Session Persistence Complete
+
+Implemented `ap/src/session/mod.rs` and `ap/src/session/store.rs`:
+- `Session` struct: id, created_at (ISO 8601 via SystemTime), model, messages — derives Serialize/Deserialize/Debug/Clone
+- `Session::new(id, model)` and `Session::generate(model)` (UUID v4)
+- `SessionStore::save` → `~/.ap/sessions/<id>.json` with auto-create dir
+- `SessionStore::load` → typed Err with path on failure (no panic)
+- `AgentLoop::with_session()` constructor loads messages from session; `autosave_session()` called after each turn
+- `main.rs` wires --session flag: loads existing session or creates new one
+- 5 session unit tests pass; 68 total tests pass; zero warnings; release build clean
+- Committed: db97c25
+
+Emitting review.ready for Fresh-Eyes Critic.
+
+## 2026-03-22 — Fresh-Eyes Review: task-08 Session Persistence
+
+Reviewed task-08-session-persistence (task-1774190686-beae).
+
+### FAIL-1: Session store tests bypass SessionStore::save/load entirely
+All 3 acceptance criteria tests use `save_to_dir`/`load_from_dir` helper functions
+that replicate the save/load logic without calling `SessionStore::save` or `SessionStore::load`.
+The AC explicitly says "When `SessionStore::save(&session)` then `SessionStore::load("test-session")` are called".
+`SessionStore::path_for` (using `dirs::home_dir()`) is completely untested.
+Fix: refactor `SessionStore` to accept a configurable base dir (`SessionStore { base: PathBuf }`
+defaulting to `~/.ap/sessions/`), construct with a tmpdir in tests.
+
+### FAIL-2: AgentLoop::with_session is never called in any test
+`with_session` is implemented in app.rs but no test exercises the:
+- messages seeded from loaded session
+- autosave_session() called after run_turn
+Fix: add a tokio test that creates a Session with 1 message, calls with_session, runs a turn,
+and then checks the session file was written (using the configurable base path from FAIL-1 fix).
+
+Decision: review.rejected

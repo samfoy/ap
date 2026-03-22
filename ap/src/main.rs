@@ -22,17 +22,24 @@ fn main() {
 
     // Load or create session
     let _session: Option<Session> = match &args.session {
-        Some(id) => match SessionStore::load(id) {
-            Ok(session) => {
-                eprintln!("ap: resuming session {id} ({} messages)", session.messages.len());
-                Some(session)
+        Some(id) => {
+            let store = SessionStore::new().unwrap_or_else(|e| {
+                eprintln!("ap: warning: could not determine session dir: {e}");
+                // Fall back to a no-op store in the current directory
+                SessionStore::with_base(std::path::PathBuf::from(".ap/sessions"))
+            });
+            match store.load(id) {
+                Ok(session) => {
+                    eprintln!("ap: resuming session {id} ({} messages)", session.messages.len());
+                    Some(session)
+                }
+                Err(e) => {
+                    eprintln!("ap: warning: could not load session '{id}': {e}");
+                    // Fall back to a new session with the given id
+                    Some(Session::new(id.clone(), config.provider.model.clone()))
+                }
             }
-            Err(e) => {
-                eprintln!("ap: warning: could not load session '{id}': {e}");
-                // Fall back to a new session with the given id
-                Some(Session::new(id.clone(), config.provider.model.clone()))
-            }
-        },
+        }
         None => None,
     };
 

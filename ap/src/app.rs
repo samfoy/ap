@@ -57,6 +57,8 @@ pub struct AgentLoop {
     ui_tx: mpsc::Sender<UiEvent>,
     /// Active session (if persistence is enabled).
     session: Option<Session>,
+    /// Store used for session autosave (if persistence is enabled).
+    store: Option<SessionStore>,
 }
 
 impl AgentLoop {
@@ -74,16 +76,36 @@ impl AgentLoop {
             hooks,
             ui_tx,
             session: None,
+            store: None,
         }
     }
 
     /// Construct a new agent loop with an optional session for persistence.
+    ///
+    /// Uses the default `~/.ap/sessions/` store. If the home directory cannot
+    /// be determined, autosave is silently disabled.
     pub fn with_session(
         provider: Arc<dyn Provider>,
         tools: ToolRegistry,
         hooks: HookRunner,
         ui_tx: mpsc::Sender<UiEvent>,
         session: Option<Session>,
+    ) -> Self {
+        let store = SessionStore::new().ok();
+        Self::with_session_store(provider, tools, hooks, ui_tx, session, store)
+    }
+
+    /// Construct a new agent loop with an optional session and a custom store.
+    ///
+    /// Primarily useful in tests where you want autosave directed at a `tempdir`
+    /// instead of `~/.ap/sessions/`.
+    pub fn with_session_store(
+        provider: Arc<dyn Provider>,
+        tools: ToolRegistry,
+        hooks: HookRunner,
+        ui_tx: mpsc::Sender<UiEvent>,
+        session: Option<Session>,
+        store: impl Into<Option<SessionStore>>,
     ) -> Self {
         let messages = session
             .as_ref()
@@ -96,6 +118,7 @@ impl AgentLoop {
             hooks,
             ui_tx,
             session,
+            store: store.into(),
         }
     }
 
@@ -106,9 +129,9 @@ impl AgentLoop {
 
     /// Persist the current message history into the active session (if any).
     fn autosave_session(&mut self) {
-        if let Some(ref mut session) = self.session {
+        if let (Some(ref mut session), Some(ref store)) = (&mut self.session, &self.store) {
             session.messages = self.messages.clone();
-            if let Err(e) = SessionStore::save(session) {
+            if let Err(e) = store.save(session) {
                 // Non-fatal: warn but don't crash the agent loop
                 eprintln!("ap: warning: failed to save session: {e}");
             }
@@ -307,6 +330,7 @@ mod tests {
     use super::*;
     use crate::config::HooksConfig;
     use crate::provider::{ProviderError, StreamEvent};
+    use crate::session::{store::SessionStore, Session};
 
     use futures::stream::{self, BoxStream};
     use std::collections::VecDeque;
@@ -397,5 +421,65 @@ mod tests {
         assert_eq!(agent.messages.len(), 2);
         assert!(matches!(agent.messages[0].role, Role::User));
         assert!(matches!(agent.messages[1].role, Role::Assistant));
+    }
+
+    // ── with_session_seeds_messages_and_autosaves ─────────────────────────────
+    // FAIL-2 fix: verify that with_session_store seeds messages from the session
+    // and that autosave_session writes the file after run_turn.
+
+    #[tokio::test]
+    async fn with_session_seeds_messages_and_autosaves() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = SessionStore::with_base(tmp.path().to_path_buf());
+
+        // Build a session with one pre-existing message
+        let mut session = Session::new("autosave-test".to_string(), "claude".to_string());
+        session
+            .messages
+            .push(crate::provider::Message::user("previous message"));
+
+        let provider = Arc::new(MockProvider::new(vec![vec![
+            StreamEvent::TextDelta("hi".to_string()),
+            StreamEvent::TurnEnd {
+                stop_reason: "end_turn".to_string(),
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+        ]]));
+
+        let (tx, _rx) = mpsc::channel(16);
+        let mut agent = AgentLoop::with_session_store(
+            provider,
+            ToolRegistry::with_defaults(),
+            HookRunner::new(HooksConfig::default()),
+            tx,
+            Some(session),
+            store,
+        );
+
+        // Messages should be seeded from the session before any turn
+        assert_eq!(
+            agent.messages.len(),
+            1,
+            "with_session_store should seed messages from session"
+        );
+
+        agent.run_turn("new input".into()).await.unwrap();
+
+        // After run_turn, the session file must exist on disk
+        let session_file = tmp.path().join("autosave-test.json");
+        assert!(
+            session_file.exists(),
+            "session file should be autosaved after run_turn"
+        );
+
+        // The saved session must contain at least: previous msg + user + assistant
+        let raw = std::fs::read_to_string(&session_file).unwrap();
+        let loaded: crate::session::Session = serde_json::from_str(&raw).unwrap();
+        assert!(
+            loaded.messages.len() >= 2,
+            "saved session should have pre-existing + new messages, got {}",
+            loaded.messages.len()
+        );
     }
 }
