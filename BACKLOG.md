@@ -71,3 +71,16 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 - [x] Initial v1 build (scaffold, config, tools, provider, hooks, TUI, non-interactive, README)
 - [x] Extensions system removed (agent-era philosophy: fork the code)
+
+---
+
+## 🏁 Milestone: Self-Hosting
+
+> **ap builds ap.**
+>
+> When items 1 (provider abstraction), 7 (AGENTS.md), and 9 (background processes + tmux) are complete:
+> - Switch `ap-monitor.py` from `pi --print` to `ap -p`
+> - Switch Ralph loop backend from `pi` to `ap` (`ralph.yml`: `cli.backend: "ap"`)
+> - `ap` is now the agent driving its own development loop
+>
+> Gate: `ap -p "read BACKLOG.md and summarize the next 3 items"` must work reliably end-to-end.
