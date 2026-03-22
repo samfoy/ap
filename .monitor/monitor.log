@@ -122,3 +122,9 @@ The gap is total: `fastembed-rs` embeddings, the HNSW index, session recall, the
 The gap is clear: every other item in that log follows a `start → complete → merge` pattern, but Image support stalled after `start` — no code was written, no merge commit exists, and the feature (`@image.png` syntax, base64 vision messages) is entirely absent from `ap/src/`.
 [15:14:47] Merging feature/image-support into main...
 [15:14:48] Merged and cleaned up worktree for: Image support
+[15:14:51] 🎉 All backlog items complete!
+[15:24:05] ap monitor started (sequential mode)
+[15:24:05] 🎉 All backlog items complete!
+[15:24:23] ap monitor started (sequential mode)
+[15:24:23] Starting: Provider abstraction
+[15:24:23] Created worktree: /Users/sam.painter/Projects/ap-worktrees/provider-abstraction (feature/provider-abstraction)
