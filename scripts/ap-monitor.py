@@ -193,7 +193,12 @@ def ralph_running(wt_path):
 
 def spawn_ralph(wt_path, title):
     log_file = wt_path / ".monitor-ralph.log"
-    cmd = f"nohup ralph run -H builtin:pdd-to-code-assist --no-tui --continue >> {log_file} 2>&1 &"
+    # Fresh run (no --continue) since we strip .ralph/ before each merge
+    scratchpad = wt_path / ".ralph/agent/scratchpad.md"
+    if scratchpad.exists():
+        cmd = f"nohup ralph run -H builtin:pdd-to-code-assist --no-tui --continue >> {log_file} 2>&1 &"
+    else:
+        cmd = f"nohup ralph run -H builtin:pdd-to-code-assist --no-tui >> {log_file} 2>&1 &"
     run(cmd, cwd=wt_path)
     time.sleep(3)
     # Quick sanity check — any ralph running at all?
