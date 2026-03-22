@@ -42,12 +42,6 @@ futures = "0.3"
 anyhow = "1"
 thiserror = "2"
 
-# Scripting extensions (sync feature required for Send+Sync)
-rhai = { version = "1", features = ["sync"] }
-
-# Dylib loading
-libloading = "0.8"
-
 # Temp files for hooks
 tempfile = "3"
 

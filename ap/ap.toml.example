@@ -35,17 +35,3 @@ region = "us-west-2"
 
 # Run on any agent error.
 # on_error = "~/.ap/hooks/on_error.sh"
-
-[extensions]
-# Extensions are auto-discovered from:
-#   ~/.ap/extensions/   (global)
-#   ./.ap/extensions/   (project-local)
-#
-# Supported extension types:
-#   .rhai   — Rhai scripting language extensions (recommended, safe)
-#   .dylib  — Compiled Rust dynamic library extensions (macOS)
-#   .so     — Compiled Rust dynamic library extensions (Linux)
-#
-# WARNING: Dylib extensions execute arbitrary native code. Only load dylibs
-# you trust. Any toolchain or crate version mismatch between ap and the
-# extension will cause undefined behavior. Prefer Rhai extensions.

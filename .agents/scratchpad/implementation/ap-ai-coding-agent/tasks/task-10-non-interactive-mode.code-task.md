@@ -44,7 +44,6 @@ Non-interactive mode is how `ap` is used from scripts, CI, and Ralph itself. Whe
 - Task 02 (config) — `AppConfig::load()`
 - Task 03 (tool trait) — `ToolRegistry`
 - Task 05 (hooks) — `HookRunner`
-- Task 06 (extensions) — `ExtensionLoader`
 - Task 07 (agent loop) — `AgentLoop`, `UiEvent`
 - Task 08 (session) — `SessionStore`
 

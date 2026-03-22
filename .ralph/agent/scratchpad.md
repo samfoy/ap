@@ -444,3 +444,93 @@ Fix: add a tokio test that creates a Session with 1 message, calls with_session,
 and then checks the session file was written (using the configurable base path from FAIL-1 fix).
 
 Decision: review.rejected
+
+## 2026-03-22 — Task 08: Session Persistence — FAIL-1/FAIL-2 Fixed (2nd attempt)
+
+Addressed both review.rejected FAILs:
+
+**FAIL-1 (SessionStore tests bypassed real save/load):**
+- Refactored `SessionStore` from static methods to instance struct with `base: PathBuf`
+- `SessionStore::new()` → `~/.ap/sessions/` (uses dirs::home_dir())
+- `SessionStore::with_base(base)` → configurable for tests
+- Replaced all 3 tests that used helper functions with tests calling real `store.save()` / `store.load()`
+- `path_for` is now `&self` method using `self.base`
+
+**FAIL-2 (AgentLoop::with_session never tested):**
+- Added `store: Option<SessionStore>` field to `AgentLoop`
+- Added `with_session_store(provider, tools, hooks, tx, session, store)` constructor for tests
+- `with_session` delegates to `with_session_store` with `SessionStore::new().ok()`
+- `autosave_session` uses `self.store` instead of static call
+- Added `with_session_seeds_messages_and_autosaves` tokio test:
+  - Creates session with 1 message, calls with_session_store with tmpdir store
+  - Verifies messages seeded (len=1) before run_turn
+  - Runs run_turn, verifies session file written to tmpdir
+  - Deserializes and verifies messages.len() >= 2
+
+Results: 69 tests pass, zero warnings, release build clean. Committed: e994f78.
+
+## 2026-03-22 — build.blocked resolved: Task 09 TUI is complete
+
+Received build.blocked event for task-1774191286-055d (Ratatui TUI step 9).
+Checked actual state: TUI was fully implemented, build was clean, all 85 tests pass.
+The src/tui/ directory was untracked — needed to be committed.
+
+Committed: 782b6db — feat(tui): implement ratatui TUI with 4-pane layout...
+- TuiApp with Normal/Insert mode state machine
+- 4-pane layout: status bar, conversation (65%), tools (35%), input box
+- Help overlay via /help
+- 16 unit tests pass (headless + event handling)
+
+Emitting review.ready for Fresh-Eyes Critic on task-09 TUI.
+
+## 2026-03-22 — Design Amendment: Remove Extensions System (Sam, 08:00 PDT)
+
+**User feedback:** Extensions (Rhai scripting + Rust dylib) are a design mistake. With AI agents, anyone who wants custom tools just has the agent edit the source code. The extension machinery adds complexity without value.
+
+**Cut from v1 entirely:**
+- `src/extensions/` module (mod.rs, rhai_loader.rs, dylib_loader.rs)
+- `rhai` and `libloading` crate dependencies from Cargo.toml
+- `Registry`, `Extension` trait, `ExtensionLoader`, `RhaiTool`, `Panel`, `MessageInterceptor` stubs
+- All extension discovery/loading code
+- Extension-related config (`[extensions]` section in ap.toml.example)
+
+**Hooks stay** — shell script lifecycle hooks are genuinely useful for non-code integration (audit logging, approval gates, external notifications). They don't add meaningful complexity.
+
+**If task-06 already landed:** delete src/extensions/, remove rhai+libloading from Cargo.toml, remove extensions module from main.rs. Run cargo build --release to confirm clean.
+
+**Rationale:** In the agent era, extensibility = forking or editing the code. Plugin systems are a pre-agent solution to a post-agent problem.
+
+## 2026-03-22 — Finalization: task-09 TUI closed
+
+review.passed received for task-1774191286-055d (pdd:ap-ai-coding-agent:step-09:ratatui-tui).
+- 16 TUI tests, 85 total tests pass, zero warnings/clippy
+- 4-pane ratatui layout, vim keybindings, help overlay, UiEvent streaming all verified
+- Adversarial paths handled
+- Marked task-09-ratatui-tui.code-task.md as completed
+- Closed runtime task task-1774191286-055d
+
+design.amendment received: Remove extensions system entirely.
+- Delete src/extensions/, remove rhai+libloading from Cargo.toml, remove [extensions] config
+- task-06 code-task is marked completed (the old extension code exists) but it should be deleted
+- This needs a builder step to clean up the extensions code
+
+Remaining code-tasks: task-10 (non-interactive mode), task-11 (README) — both pending.
+Plus extensions cleanup from design.amendment.
+
+Emitting queue.advance so Task Writer materializes next wave (step 10: non-interactive + extensions cleanup).
+
+## 2026-03-22 — queue.advance: Step 9 → Step 10 (extensions cleanup)
+
+Step 9 (TUI) is complete (review.passed). Handling design.amendment: remove extensions system entirely.
+
+Actions taken:
+- Created `task-10-remove-extensions-cleanup.code-task.md` — delete src/extensions/, remove rhai+libloading deps, clean up all references
+- Updated `task-10-non-interactive-mode.code-task.md` — removed ExtensionLoader dependency
+- Updated `task-11-readme.code-task.md` — removed extensions documentation requirements, added note not to document removed system
+- Updated `progress.md` — Step 9 marked complete, Step 10 (cleanup) set as current
+- Materialized runtime task task-1774191964-479c (pdd:ap-ai-coding-agent:step-10:remove-extensions-cleanup)
+
+Wave sequence:
+- Next: step-10 cleanup (delete extensions)
+- Then: step-11 non-interactive mode (original task-10)
+- Then: step-12 README (original task-11)

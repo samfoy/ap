@@ -51,18 +51,6 @@ impl Default for ToolsConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ExtensionsConfig {
-    pub auto_discover: bool,
-}
-
-impl Default for ExtensionsConfig {
-    fn default() -> Self {
-        Self { auto_discover: true }
-    }
-}
-
 // ─── Top-level AppConfig ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,7 +59,6 @@ pub struct AppConfig {
     pub provider: ProviderConfig,
     pub hooks: HooksConfig,
     pub tools: ToolsConfig,
-    pub extensions: ExtensionsConfig,
 }
 
 // ─── Fine-grained table overlay ───────────────────────────────────────────
@@ -119,13 +106,6 @@ fn overlay_from_table(mut base: AppConfig, table: toml::Table) -> AppConfig {
         if let Ok(t) = toml::Value::Table(tt.clone()).try_into::<ToolsConfig>() {
             if tt.contains_key("enabled") {
                 base.tools.enabled = t.enabled;
-            }
-        }
-    }
-    if let Some(toml::Value::Table(et)) = table.get("extensions") {
-        if let Ok(e) = toml::Value::Table(et.clone()).try_into::<ExtensionsConfig>() {
-            if et.contains_key("auto_discover") {
-                base.extensions.auto_discover = e.auto_discover;
             }
         }
     }
@@ -210,7 +190,6 @@ mod tests {
         assert_eq!(cfg.provider.region, "us-west-2");
         assert!(cfg.hooks.pre_tool_call.is_none());
         assert_eq!(cfg.tools.enabled, vec!["read", "write", "edit", "bash"]);
-        assert!(cfg.extensions.auto_discover);
     }
 
     #[test]
