@@ -1278,3 +1278,43 @@ Added workspace-level and crate-level clippy lint enforcement:
 - Committed: bb160ac
 
 Emitting review.ready for Fresh-Eyes Critic.
+
+## 2026-03-22 — Task 09: Clippy Lint Suite — Fix for review.rejected
+
+**FAIL identified:** `[workspace.lints.clippy]` was silently ignored because this is a single-crate project (no workspace Cargo.toml). `[workspace.lints.*]` is only valid in a workspace root.
+
+**Fix:**
+- Changed `[workspace.lints.rust]` → `[lints.rust]` in ap/Cargo.toml
+- Changed `[workspace.lints.clippy]` → `[lints.clippy]` in ap/Cargo.toml
+- This activated the lints for ALL targets (lib, bin, tests)
+- Added `#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]` to all `#[cfg(test)] mod tests {}` blocks
+- Added `#![allow(...)]` at top of `tests/noninteractive.rs`
+- Fixed production code violations:
+  - `src/tui/mod.rs`: `.expect(...)` → `.ok_or_else(|| anyhow::anyhow!(...))?`
+  - `src/tools/mod.rs`: redundant closure → `std::convert::AsRef::as_ref`
+
+**Verification:**
+- `cargo clippy --all-targets -- -D warnings`: exits 0 ✓
+- `cargo test`: 98 tests pass ✓
+- Committed: 7306b72
+
+## 2026-03-22 — Finalization: task-09 Clippy Lint Suite closed
+
+review.passed received for task-1774197260-f970 (pdd:ap-fp-refactor:step-09:clippy-lint-suite).
+All 5 ACs verified: [lints.*] in Cargo.toml (not workspace — correct for single-crate), crate-level gates in main.rs, cargo clippy --all-targets -- -D warnings exits 0, 98 tests pass, zero production unwrap/expect. Committed: 7306b72.
+Closed runtime task task-1774197260-f970.
+Progress.md: Step 09 → completed.
+
+ALL 9 STEPS COMPLETE. Zero open runtime tasks. Emitting implementation.ready.
+
+## 2026-03-22 — Validation Complete: ap FP Refactor
+
+All 9 steps verified. Manual E2E tests pass. Code quality checks pass.
+- 98 tests, 0 failures
+- cargo build --release: 0 warnings
+- cargo clippy --all-targets -- -D warnings: clean
+- AgentLoop deleted, turn() pure, Middleware chain functional, TUI decoupled
+- Session persistence works, headless mode works
+- Adversarial test (nonexistent session) handled gracefully
+- Validation task: task-1774198028-2f26 (closed)
+- Emitting validation.passed
