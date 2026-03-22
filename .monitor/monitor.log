@@ -108,3 +108,6 @@ The gap is total: `fastembed-rs` embeddings, the HNSW index, session recall, the
 [15:13:25] Merged and cleaned up worktree for: Semantic search over sessions + directories
 [15:13:27] Starting: LSP integration
 [15:13:27] Created worktree: /Users/sam.painter/Projects/ap-worktrees/lsp-integration (feature/lsp-integration)
+[15:13:31] Ralph running for LSP integration
+[15:13:31] Starting: Image support
+[15:13:31] Created worktree: /Users/sam.painter/Projects/ap-worktrees/image-support (feature/image-support)
