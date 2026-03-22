@@ -54,7 +54,14 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Job lifecycle:** `job list`, `job attach <id>` (open tmux pane), `job kill <id>`, `job logs <id>` — callable by Claude as tool calls or by user as `/job` commands in TUI input
     - Config: `[jobs] max_concurrent = 4, tmux_enabled = true, default_shell = "zsh"`
 
-10. [ ] **Session management UX** — `ap sessions` command lists recent sessions with summaries. `ap --resume` picks up the most recent session automatically. Session names: auto-generated from first message.
+10. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
+    - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
+    - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
+    - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
+    - Incremental indexing: watch for new sessions + file changes, reindex in background
+    - Config: `[search] enabled = true, dirs = [], session_recall = true, recall_top_k = 3`
+    - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
+    - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
 
 11. [ ] **LSP integration** — Connect to running language servers for code-aware context:
     - `lsp` built-in tool: `{ "op": "hover" | "definition" | "references" | "diagnostics" | "completion", "file": "...", "line": N, "col": N }`
@@ -63,9 +70,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Diagnostics surface passively: on file write, ap runs `diagnostics` on the saved file and appends errors/warnings as a follow-up tool result
     - Config: `[lsp] enabled = true, servers = { rust = "rust-analyzer", python = "pyright", typescript = "typescript-language-server" }`
     - Uses `tower-lsp` client (Rust LSP client crate) or shells out to `lsp-cli` if available
-    - TUI: diagnostics panel (toggleable, `d` key) shows current file errors inline
-
-12. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
+    - TUI: diagnostics panel (toggleable, `d` key) shows current file errors inline — Built-in vector search, no external service required. Two search surfaces:
     - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
     - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
     - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
