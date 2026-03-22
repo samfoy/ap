@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 
 use crate::hooks::{HookOutcome, HookRunner};
 use crate::provider::{Message, MessageContent, Provider, Role, StreamEvent};
+use crate::session::{store::SessionStore, Session};
 use crate::tools::{ToolRegistry, ToolResult};
 
 // ─── UiEvent ──────────────────────────────────────────────────────────────────
@@ -54,6 +55,8 @@ pub struct AgentLoop {
     tools: ToolRegistry,
     hooks: HookRunner,
     ui_tx: mpsc::Sender<UiEvent>,
+    /// Active session (if persistence is enabled).
+    session: Option<Session>,
 }
 
 impl AgentLoop {
@@ -70,12 +73,46 @@ impl AgentLoop {
             tools,
             hooks,
             ui_tx,
+            session: None,
+        }
+    }
+
+    /// Construct a new agent loop with an optional session for persistence.
+    pub fn with_session(
+        provider: Arc<dyn Provider>,
+        tools: ToolRegistry,
+        hooks: HookRunner,
+        ui_tx: mpsc::Sender<UiEvent>,
+        session: Option<Session>,
+    ) -> Self {
+        let messages = session
+            .as_ref()
+            .map(|s| s.messages.clone())
+            .unwrap_or_default();
+        Self {
+            messages,
+            provider,
+            tools,
+            hooks,
+            ui_tx,
+            session,
         }
     }
 
     /// Send a [`UiEvent`], ignoring send errors (receiver may have closed).
     async fn emit(&self, event: UiEvent) {
         let _ = self.ui_tx.send(event).await;
+    }
+
+    /// Persist the current message history into the active session (if any).
+    fn autosave_session(&mut self) {
+        if let Some(ref mut session) = self.session {
+            session.messages = self.messages.clone();
+            if let Err(e) = SessionStore::save(session) {
+                // Non-fatal: warn but don't crash the agent loop
+                eprintln!("ap: warning: failed to save session: {e}");
+            }
+        }
     }
 
     /// Execute one complete agent turn, looping until no tool calls remain.
@@ -176,6 +213,7 @@ impl AgentLoop {
             // No tool calls → turn is done
             if pending_tools.is_empty() {
                 self.emit(UiEvent::TurnEnd).await;
+                self.autosave_session();
                 return Ok(());
             }
 

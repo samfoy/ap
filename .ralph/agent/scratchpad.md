@@ -392,3 +392,20 @@ Key compile fixes:
 
 Results: 56 tests pass, zero warnings, cargo build --release clean.
 Committed: 550316f
+
+## 2026-03-22 — build.blocked resolved: Task 07 Agent Loop is complete
+
+Builder emitted build.blocked but task-07 agent-loop is actually complete:
+- All 63 tests pass (5 integration tests in tests/agent_loop.rs + tests/hook_cancel.rs)
+- `cargo build --release` → success, zero warnings
+- AgentLoop: UiEvent enum, run_turn(), tool dispatch, hook cancel, MockProvider
+- Committed: 09c1231
+
+Closed task-1774190163-7c65. Emitting review.ready for Fresh-Eyes Critic.
+
+## 2026-03-22 — Finalization: task-07-agent-loop closed
+
+review.passed received for task-07 agent-loop (no runtime task ID — was already closed in prior iteration per scratchpad).
+Updated task-07-agent-loop.code-task.md to status: completed.
+Tasks 01-07 all completed. Tasks 08-11 remain pending.
+Emitting queue.advance → Task Writer for task-08 (session persistence).

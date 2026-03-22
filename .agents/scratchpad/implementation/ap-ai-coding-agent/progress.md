@@ -1,7 +1,7 @@
 # Implementation Progress: ap-ai-coding-agent
 
 ## Current Step
-Step 7: Agent loop
+Step 8: Session persistence
 
 ## Completed Steps
 - Step 1: Cargo.toml + project scaffold ✓ (task-01-cargo-toml-project-scaffold.code-task.md)
@@ -10,9 +10,10 @@ Step 7: Agent loop
 - Step 4: Provider trait + Bedrock ✓ (task-04-provider-trait-bedrock.code-task.md) — 40 tests pass, BoxStream, parse_sse_event, zero warnings
 - Step 5: Hooks system ✓ (task-05-hooks-system.code-task.md) — 6 hook tests pass, 46 total tests pass, zero warnings
 - Step 6: Extensions system ✓ (task-06-extensions-system.code-task.md) — Rhai + dylib loading, 56 tests pass, zero warnings
+- Step 7: Agent loop ✓ (task-07-agent-loop.code-task.md) — 63 tests pass (incl. 5 integration tests), MockProvider, zero warnings
 
 ## Active Wave
-- Step 7 runtime task: task-1774190163-7c65 (pdd:ap-ai-coding-agent:step-07:agent-loop)
+- Step 8 runtime task: task-1774190686-beae (pdd:ap-ai-coding-agent:step-08:session-persistence)
 
 ## Notes
 - Task-01 completed: cargo build --release clean, ap --version=0.1.0, all deps declared, 2 tests pass.
