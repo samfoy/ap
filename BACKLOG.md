@@ -141,6 +141,16 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
+19. [ ] **Robust file editing** — Reliable, no-friction file edits by default:
+    - **No approval prompts by default** — edits apply immediately, no confirmation dialogs. Trust the user. `--safe` flag available for those who want confirmation.
+    - **Dry-run / diff preview** — `--dry-run` flag shows unified diff without writing. Claude can also call `preview_edit` tool to show before applying.
+    - **Atomic multi-file apply** — all edits in a turn applied as a batch; if any write fails, roll back the whole set
+    - **Undo** — `/undo` command reverts last batch of edits (saves pre-edit snapshot in `~/.ap/undo/`)
+    - **Large file safety** — for files >1000 lines, use line-range context in the edit tool rather than full-file replacement; validate line numbers against actual file before applying
+    - **Edit tool schema:** `{ "file": string, "old_str": string, "new_str": string }` (exact match replace, not line numbers) — same convention as Claude Code / pi
+    - **Write tool:** `{ "file": string, "content": string }` — full file overwrite, always works
+    - Config: `[editing] require_approval = false` (default)
+
 ---
 
 ## ✅ Complete
