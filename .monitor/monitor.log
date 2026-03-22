@@ -52,3 +52,7 @@ The concrete gap: the three gating prerequisites from the backlog entry — Prov
 The gap is straightforward: the monitor picked up other backlog items (self-hosting, AGENTS.md) before getting to the session work. Session management UX is still pending.
 [15:08:36] Merging feature/session-management-ux into main...
 [15:08:36] Merged and cleaned up worktree for: Session management UX
+[15:08:56] Merge conflict on Model switching: 
+[15:08:56] Conflict info saved to /Users/sam.painter/Projects/ap/.monitor/conflicts/model-switching.md. Skipping Model switching for now.
+[15:08:56] Starting: Kiro provider
+[15:08:56] Created worktree: /Users/sam.painter/Projects/ap-worktrees/kiro-provider (feature/kiro-provider)

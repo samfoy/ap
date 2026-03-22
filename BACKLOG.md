@@ -57,7 +57,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Works across all providers (Bedrock, OpenAI-compat)
     - Recent models remembered in `~/.ap/models.json` for quick switching
 
-7. [ ] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
+7. [~] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
 
     **API details** (from pi-provider-kiro reference impl at ~/Projects/pi-provider-kiro):
     - Endpoint: `https://q.us-east-1.amazonaws.com/generateAssistantResponse`
