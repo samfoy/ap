@@ -90,6 +90,39 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
     - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
 
+
+2. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
+    - `/model <id>` command in TUI input switches active model immediately
+    - `--model` CLI flag overrides config at startup
+    - Model displayed in TUI status bar
+    - Works across all providers (Bedrock, OpenAI-compat)
+    - Recent models remembered in `~/.ap/models.json` for quick switching
+
+3. [ ] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
+    - Slash command or @mention triggers ap in any channel or DM
+    - Streaming responses posted as editable Slack messages (updated chunk by chunk)
+    - Tool calls shown as threaded replies (collapsible)
+    - Session per Slack thread — conversation history maintained
+    - Config: `[slack] bot_token = "..." app_token = "..." signing_secret = "..."`
+    - Socket Mode for no-ingress-required deployment
+    - Runs as a daemon: `ap slack-bot`
+
+4. [ ] **Self-hosting (ap builds ap)** — Switch the Ralph build loop from pi to ap itself:
+    - Gate: `ap -p "read BACKLOG.md and summarize the next 3 items"` works reliably end-to-end
+    - Update `ralph.yml` cli.backend from `pi` to `ap`
+    - Update `ap-monitor.py` to use `ap --print` instead of `pi --print`
+    - Requires: Provider abstraction + AGENTS.md support + non-interactive mode stability
+    - Milestone: ap is the agent driving its own development loop
+
+5. [ ] **Code review + aggressive refactor pass** — Full codebase review and cleanup:
+    - Audit all public APIs for consistency (naming, error types, return conventions)
+    - Identify and eliminate any remaining mutable state outside the turn pipeline
+    - Dead code removal, unused dependencies pruned from Cargo.toml
+    - Benchmark turn() latency — identify any blocking calls that should be async
+    - Review all error handling: replace any remaining panics with proper Results
+    - Clippy pedantic pass: fix all warnings, document any intentional allows
+    - Write architectural decision records (ADRs) for key design choices in docs/
+
 ---
 
 ## ✅ Complete
