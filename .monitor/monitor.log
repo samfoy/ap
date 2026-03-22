@@ -36,3 +36,6 @@ The gap is concrete: BACKLOG.md marks AGENTS.md support as `[~]` (in progress) b
 [15:07:26] Ralph running for Self-hosting (ap builds ap)
 [15:07:26] Starting: Session management UX
 [15:07:26] Created worktree: /Users/sam.painter/Projects/ap-worktrees/session-management-ux (feature/session-management-ux)
+[15:07:29] Ralph running for Session management UX
+[15:07:29] Starting: Model switching
+[15:07:29] Created worktree: /Users/sam.painter/Projects/ap-worktrees/model-switching (feature/model-switching)

@@ -50,7 +50,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - TUI: `s` key opens session browser overlay — scrollable list, preview pane, Enter to resume, `f` to fork
     - Remove the `--session` opt-in flag concept entirely — persistence is always on
 
-6. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
+6. [~] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
     - `/model <id>` command in TUI input switches active model immediately
     - `--model` CLI flag overrides config at startup
     - Model displayed in TUI status bar
