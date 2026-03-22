@@ -248,3 +248,8 @@ The one notable gap: token estimation is a `chars / 4` heuristic rather than usi
 [16:51:33] Push failed: remote: error: Trace: fdd5edb5cc72801bda14c62b874ba76946c18348635ddace2455af0ef722e44a        
 remote: error: See https://gh.io/lfs for more information.        
 remote: error: File .monitor-ralph.log
+[16:51:38] Push failed: remote: error: Trace: 027418a678117296f67b52244536a9015016dea813df36a0e70504ba4c3ae36a        
+remote: error: See https://gh.io/lfs for more information.        
+remote: error: File .monitor-ralph.log
+[16:51:38] Starting: Model switching
+[16:51:38] Created worktree: /Users/sam.painter/Projects/ap-worktrees/model-switching (feature/model-switching)
