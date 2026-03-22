@@ -84,3 +84,13 @@ e8a1520 chore(monitor): start Kiro provider
 c3ada79 feat: merge Self-hosting (ap builds ap)
 5305981 chore: auto-commit before merge (loop primary)
 099b690 chore(monitor): start Model switching
+
+## 2026-03-22 15:11 — Slack bot integration
+Review: The Slack bot integration **did not land** — it stalled. The monitor flipped it to `[~]` (in-progress) in commit `8859c54` but there's no corresponding "complete" commit; the loop immediately pivoted to "Code review + aggressive refactor pass" instead. No actual Slack bot code (socket mode daemon, `ap slack-bot` command, Slack API wiring) was written — only the BACKLOG status changed. The item remains `[~]` with zero implementation.
+Commits:
+2952082 chore(monitor): start Code review + aggressive refactor pass
+e8a1520 chore(monitor): start Kiro provider
+830e5a1 chore(monitor): complete Session management UX
+51db87d chore(monitor): complete Self-hosting (ap builds ap)
+c3ada79 feat: merge Self-hosting (ap builds ap)
+5305981 chore: auto-commit before merge (loop primary)
