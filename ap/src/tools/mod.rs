@@ -74,7 +74,7 @@ impl ToolRegistry {
 
     /// Find a tool by name.
     pub fn find_by_name(&self, name: &str) -> Option<&dyn Tool> {
-        self.tools.iter().find(|t| t.name() == name).map(|t| t.as_ref())
+        self.tools.iter().find(|t| t.name() == name).map(std::convert::AsRef::as_ref)
     }
 
     /// Consuming builder — register a tool and return `self` (chainable).

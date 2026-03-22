@@ -131,6 +131,7 @@ pub fn shell_hook_bridge(config: &HooksConfig) -> Middleware {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::sync::{Arc, Mutex};
 

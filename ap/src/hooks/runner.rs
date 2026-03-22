@@ -162,6 +162,7 @@ impl HookRunner {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
@@ -284,6 +285,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod integration_tests {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;

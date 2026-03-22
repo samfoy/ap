@@ -1252,3 +1252,29 @@ Work for Builder:
 6. Commit
 
 This is the final implementation step. After this, the FP refactor is complete.
+
+## 2026-03-22 — Task 09: Clippy Lint Suite Complete
+
+Added workspace-level and crate-level clippy lint enforcement:
+
+**Cargo.toml additions:**
+- `[workspace.lints.rust]`: `unsafe_code = "forbid"`
+- `[workspace.lints.clippy]`: `unwrap_used/expect_used/panic = "deny"`, `needless_pass_by_ref_mut = "deny"`, functional style warnings
+
+**src/main.rs additions:**
+- `#![deny(unsafe_code)]`, `#![deny(clippy::unwrap_used)]`, `#![deny(clippy::expect_used)]`
+- `#![warn(clippy::pedantic)]`
+- `#![allow(clippy::module_name_repetitions)]`, `#![allow(clippy::must_use_candidate)]`
+
+**Violations fixed:**
+- `src/hooks/runner.rs`: Two `field_reassign_with_default` → struct initializer pattern
+- `src/types.rs`: `map(|e| e.clone())` → `.to_vec()`, `vec![]` in test → array literal
+- `tests/noninteractive.rs`: `prompt.unwrap()` on literal → `prompt.as_deref()`
+- `src/main.rs`: `match args.prompt { Some(...) => ..., None => ... }` → `if let Some`
+
+**Verification:**
+- `cargo clippy --all-targets -- -D warnings`: exits 0 ✓
+- `cargo test`: 98 tests pass ✓
+- Committed: bb160ac
+
+Emitting review.ready for Fresh-Eyes Critic.

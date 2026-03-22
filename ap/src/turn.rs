@@ -276,6 +276,7 @@ fn run_post_tool_chain(call: ToolCall, result: ToolResult, middleware: &Middlewa
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::config::AppConfig;

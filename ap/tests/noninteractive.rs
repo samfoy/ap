@@ -4,6 +4,8 @@
 //! Invokes the turn() pipeline programmatically (not via subprocess).
 //! Verifies TextChunk received, TurnEnd received, and no Error emitted.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 

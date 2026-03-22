@@ -244,9 +244,9 @@ impl Provider for BedrockProvider {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-
     // -----------------------------------------------------------------------
     // parse_sse_event unit tests (RED → GREEN)
     // -----------------------------------------------------------------------

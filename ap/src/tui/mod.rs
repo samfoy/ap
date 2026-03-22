@@ -193,7 +193,7 @@ impl TuiApp {
         let mut ui_rx = self
             .ui_rx
             .take()
-            .expect("run() called without ui_rx (double-call?)");
+            .ok_or_else(|| anyhow::anyhow!("run() called without ui_rx (double-call?)"))?;
 
         let result = self.event_loop(&mut terminal, &mut event_stream, &mut ui_rx).await;
 
@@ -341,6 +341,7 @@ fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
