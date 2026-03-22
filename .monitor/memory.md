@@ -24,3 +24,15 @@ ae7c729 chore: init Tool discovery
 73d4c96 chore(monitor): start Skill system
 4413c22 feat(monitor): parallel worktree-based loops, up to 3 concurrent items
 d491188 chore(backlog): all sessions named+persisted from turn 1, no ephemeral runs
+
+## 2026-03-22 13:50 — AGENTS.md support
+Review: **No, it didn't land.** The commits are all backlog housekeeping and three unrelated feature merges (skill-system, tool-discovery, richer-tui) — none of them implement AGENTS.md loading. The infrastructure to inject a system prompt exists (`with_system_prompt`, `discovery.system_prompt_additions`) but there's no code anywhere that reads `~/.ap/AGENTS.md` or `./AGENTS.md` and pipes it through that path.
+
+The gap is concrete: BACKLOG.md marks AGENTS.md support as `[~]` (in progress) but it's phantom progress — it was only *promoted* in priority order, never built. The actual feature (load global + project AGENTS.md, inject into system prompt at startup, hot-reload on next turn) is still entirely missing from `src/`.
+Commits:
+6a6e0e7 chore(backlog): mark skill-system, tool-discovery, richer-tui as complete
+6b50e4f chore(backlog): reorder for bootstrap-first — AGENTS.md and self-hosting promoted to top
+13e159b chore(backlog): add Kiro provider with full auth/API implementation notes
+90b7054 fchore(monitor): complete {title}
+407d022 chore(backlog): add model switching, slack bot, self-hosting, code review items
+f6d8d07 feat: merge richer-tui

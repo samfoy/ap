@@ -21,7 +21,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 1. [~] **Provider abstraction** — Clean Provider trait with easy swap. Add OpenAI-compatible provider (works with any OpenAI API endpoint — OpenRouter, LM Studio, Ollama). Config: `[provider] backend = "openai-compat" base_url = "..." api_key = "..."`. Streaming via SSE. Same tool call format as Bedrock adapter.
 
-2. [ ] **AGENTS.md support** — Load and inject agent context from both global and project level, same convention as pi/claude code:
+2. [x] **AGENTS.md support** — Load and inject agent context from both global and project level, same convention as pi/claude code:
     - **Global:** `~/.ap/AGENTS.md` — always injected, defines persona, coding style, preferences
     - **Project:** `./AGENTS.md` (cwd at startup) — injected after global, overrides/extends it
     - Both are injected into the system prompt at startup, global first then project
