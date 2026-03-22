@@ -157,5 +157,5 @@ fn headless_mode_extracted_from_prompt_some() {
     // Verify the logic: Some(prompt) → headless, None → TUI
     let prompt: Option<String> = Some("hello world".to_string());
     assert!(prompt.is_some(), "-p flag should produce Some(prompt)");
-    assert_eq!(prompt.unwrap(), "hello world");
+    assert_eq!(prompt.as_deref(), Some("hello world"));
 }

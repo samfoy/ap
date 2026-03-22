@@ -1163,3 +1163,92 @@ Work for Builder:
 5. Commit: `refactor: delete AgentLoop and legacy UiEvent`
 
 This is a deletion-only task — LOW risk, LOW complexity.
+
+## 2026-03-22 — Task 07: Delete AgentLoop Complete
+
+Deleted the following files:
+- `ap/src/app.rs` — AgentLoop struct + UiEvent enum (all callers migrated in Step 06)
+- `ap/tests/agent_loop.rs` — legacy integration tests for AgentLoop
+- `ap/tests/hook_cancel.rs` — legacy hook cancel tests using AgentLoop
+
+Removed `pub mod app;` from `ap/src/lib.rs`.
+
+Verification:
+- Zero remaining references to AgentLoop/UiEvent outside deleted files
+- `cargo build --release`: clean (0 warnings)
+- `cargo test`: 98 tests pass (93 unit + 2 main + 3 noninteractive)
+- Committed: ac30210
+
+Remaining steps: 08 (README update), 09 (Clippy lint suite).
+Emitting review.ready.
+
+## 2026-03-22 — Finalization: task-07 Delete AgentLoop closed
+
+review.passed received for task-1774196788-76c8 (pdd:ap-fp-refactor:step-07:delete-agentloop).
+All ACs verified: src/app.rs deleted, tests/agent_loop.rs and tests/hook_cancel.rs deleted, pub mod app removed from lib.rs. Zero AgentLoop/UiEvent references remain. 98 tests pass. Committed: ac30210.
+Closed runtime task task-1774196788-76c8.
+Progress.md updated: Step 07 → completed.
+
+Remaining steps: 08 (README update), 09 (Clippy lint suite).
+Emitting queue.advance → Task Writer for Step 08.
+
+## 2026-03-22 — queue.advance: Step 07 → Step 08 (README update)
+
+Step 07 complete (commit ac30210). Handling queue.advance event.
+
+Created task files:
+- task-08-readme-update.code-task.md — update README with turn() pipeline, Middleware API, shell hook bridge, Conversation serialization; remove AgentLoop/UiEvent refs
+- task-09-clippy-lint-suite.code-task.md — add workspace-level clippy lints, crate gates in main.rs, fix all violations
+
+Materialized Step 08 runtime task: task-1774196994-d69d (key: pdd:ap-fp-refactor:step-08:readme-update)
+Progress.md: Step 08 → active.
+
+Remaining: Step 09 (Clippy lint suite) after Step 08 completes.
+
+## 2026-03-22 — Task 08: README Update — FP Architecture Docs Complete
+
+Rewrote `ap/README.md` to document the new functional pipeline architecture:
+
+**Changes:**
+- New "Architecture" section: describes `turn()` as a pure pipeline returning `(Conversation, Vec<TurnEvent>)`, documents immutable `Conversation` struct, `TurnEvent` enum
+- New "Middleware API" section: builder pattern examples, `ToolMiddlewareResult` enum, pre-tool closure examples (log, block dangerous commands), pre-turn observer example, chain ordering explanation
+- Updated "Hooks System" intro: explains shell hooks are wrapped as `Middleware` closures at startup via `shell_hook_bridge()` — not a separate system
+- Updated "Session Management": mentions `save_conversation`/`load_conversation`, `Conversation` JSON format with `config` field, `#[serde(default)]` tolerance
+- Updated "Features" bullet: "composable middleware chain" added, "shell lifecycle hooks (wrapped as middleware)" clarified
+- Updated project layout: `app.rs` removed; `types.rs`, `turn.rs`, `middleware.rs` added; TUI comment notes no AgentLoop dependency
+- Zero stale `AgentLoop`/`UiEvent` references (one mention is "no AgentLoop dependency" — correct context)
+
+**Verification:**
+- `cargo build --release`: 0 warnings ✓
+- `cargo test`: 98 tests pass ✓
+- `grep AgentLoop README.md`: only "no AgentLoop dependency" comment ✓
+- Committed: 1b940db
+
+Emitting review.ready.
+
+## 2026-03-22 — Finalization: task-08 README Update closed
+
+review.passed received for task-1774196994-d69d (pdd:ap-fp-refactor:step-08:readme-update).
+All 5 ACs verified: turn() pipeline documented, Middleware API with examples, shell_hook_bridge adapter explained, zero stale AgentLoop/UiEvent refs, 98 tests pass. Committed: 1b940db.
+Closed runtime task task-1774196994-d69d.
+Progress.md updated: Step 08 → completed, Step 09 → active.
+
+Remaining: Step 09 (Clippy lint suite) — task-09-clippy-lint-suite.code-task.md is pending.
+Emitting queue.advance → Task Writer for Step 09.
+
+## 2026-03-22 — queue.advance: Step 08 → Step 09 (Clippy lint suite)
+
+Step 08 complete (commit 1b940db). Handling queue.advance event.
+
+Step 09 task file already exists: task-09-clippy-lint-suite.code-task.md
+Materialized Step 09 runtime task: task-1774197260-f970 (key: pdd:ap-fp-refactor:step-09:clippy-lint-suite)
+
+Work for Builder:
+1. Add [workspace.lints.clippy] to ap/Cargo.toml: unwrap_used/expect_used/panic = "deny", etc.
+2. Add [workspace.lints.rust]: unsafe_code = "forbid"
+3. Add crate-level gates to src/main.rs: #![deny(clippy::unwrap_used)], #![warn(clippy::pedantic)], etc.
+4. Run cargo clippy --all-targets -- -D warnings, fix all violations
+5. cargo test: all 98 tests must pass
+6. Commit
+
+This is the final implementation step. After this, the FP refactor is complete.

@@ -53,3 +53,16 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+needless_pass_by_ref_mut = "deny"
+option_if_let_else = "warn"
+map_unwrap_or = "warn"
+manual_let_else = "warn"
+redundant_closure_for_method_calls = "warn"

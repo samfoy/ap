@@ -156,7 +156,7 @@ mod tests {
     // AC2: TurnEvent variants are clonable
     #[test]
     fn turn_event_variants_are_clonable() {
-        let events = vec![
+        let events = [
             TurnEvent::TextChunk("hi".to_string()),
             TurnEvent::ToolStart {
                 name: "bash".to_string(),
@@ -170,7 +170,7 @@ mod tests {
             TurnEvent::Error("oops".to_string()),
         ];
 
-        let cloned: Vec<TurnEvent> = events.iter().map(|e| e.clone()).collect();
+        let cloned: Vec<TurnEvent> = events.to_vec();
         assert_eq!(cloned.len(), 5);
 
         // Spot-check cloned values

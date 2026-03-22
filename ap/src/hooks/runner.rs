@@ -256,8 +256,10 @@ mod tests {
     #[test]
     fn observer_hook_warning_on_nonzero_exit() {
         let script = make_script("exit 1");
-        let mut config = HooksConfig::default();
-        config.pre_turn = Some(script.path().to_str().unwrap().to_string());
+        let config = HooksConfig {
+            pre_turn: Some(script.path().to_str().unwrap().to_string()),
+            ..Default::default()
+        };
         let runner = HookRunner::new(config);
         let result = runner.run_observer_hook(
             runner.config.pre_turn.as_deref(),
@@ -306,8 +308,10 @@ mod integration_tests {
         let script = make_script(
             r#"[ -f "$AP_MESSAGES_FILE" ] && grep -q 'hello' "$AP_MESSAGES_FILE" && exit 0; exit 1"#
         );
-        let mut config = HooksConfig::default();
-        config.pre_turn = Some(script.path().to_str().unwrap().to_string());
+        let config = HooksConfig {
+            pre_turn: Some(script.path().to_str().unwrap().to_string()),
+            ..Default::default()
+        };
         let runner = HookRunner::new(config);
         let result = runner.run_observer_hook(
             runner.config.pre_turn.as_deref(),

@@ -10,13 +10,13 @@
 | 04 | Session persistence for Conversation | completed |
 | 05 | main.rs recipe-style + headless mode | completed |
 | 06 | TUI decoupling | completed |
-| 07 | Delete AgentLoop | active |
-| 08 | README update | pending |
-| 09 | Clippy lint suite | pending |
+| 07 | Delete AgentLoop | completed |
+| 08 | README update | completed |
+| 09 | Clippy lint suite | active |
 
 ## Active Wave
 
-Step 07 — Delete AgentLoop (task-1774196788-76c8, key: pdd:ap-fp-refactor:step-07:delete-agentloop)
+Step 09 — Clippy lint suite (pending task materialization by Task Writer)
 
 ## Completed
 
@@ -26,6 +26,7 @@ Step 07 — Delete AgentLoop (task-1774196788-76c8, key: pdd:ap-fp-refactor:step
 - Step 04: commit 392ebda — SessionStore::save_conversation/load_conversation; 105 tests pass
 - Step 05: commit 071af57 — main.rs headless + noninteractive tests using turn()/TurnEvent; 105 tests pass
 - Step 06: commit 7e957f1 — turn() returns (Conversation, Vec<TurnEvent>), TuiApp decoupled from AgentLoop; 107 tests pass
+- Step 07: commit ac30210 — deleted src/app.rs, tests/agent_loop.rs, tests/hook_cancel.rs, removed pub mod app from lib.rs; 98 tests pass
 
 ## design.amendment (pending, must precede Step 06)
 

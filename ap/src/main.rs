@@ -1,3 +1,9 @@
+#![deny(unsafe_code)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::must_use_candidate)]
 use ap::config::AppConfig;
 use ap::middleware::shell_hook_bridge;
 use ap::provider::BedrockProvider;
@@ -28,37 +34,34 @@ async fn main() -> anyhow::Result<()> {
     // Load config (merge global + project); warn but don't exit on failure
     let config = AppConfig::load().unwrap_or_default();
 
-    match args.prompt {
-        Some(prompt) => {
-            // Non-interactive (headless) mode — session handled inside run_headless
-            run_headless(config, args.session, &prompt).await
-        }
-        None => {
-            // Interactive TUI mode — load session here for the TUI path
-            let session: Option<Session> = match &args.session {
-                Some(id) => {
-                    let store = SessionStore::new().unwrap_or_else(|e| {
-                        eprintln!("ap: warning: could not determine session dir: {e}");
-                        SessionStore::with_base(std::path::PathBuf::from(".ap/sessions"))
-                    });
-                    match store.load(id) {
-                        Ok(session) => {
-                            eprintln!(
-                                "ap: resuming session {id} ({} messages)",
-                                session.messages.len()
-                            );
-                            Some(session)
-                        }
-                        Err(e) => {
-                            eprintln!("ap: warning: could not load session '{id}': {e}");
-                            Some(Session::new(id.clone(), config.provider.model.clone()))
-                        }
+    if let Some(prompt) = args.prompt {
+        // Non-interactive (headless) mode — session handled inside run_headless
+        run_headless(config, args.session, &prompt).await
+    } else {
+        // Interactive TUI mode — load session here for the TUI path
+        let session: Option<Session> = match &args.session {
+            Some(id) => {
+                let store = SessionStore::new().unwrap_or_else(|e| {
+                    eprintln!("ap: warning: could not determine session dir: {e}");
+                    SessionStore::with_base(std::path::PathBuf::from(".ap/sessions"))
+                });
+                match store.load(id) {
+                    Ok(session) => {
+                        eprintln!(
+                            "ap: resuming session {id} ({} messages)",
+                            session.messages.len()
+                        );
+                        Some(session)
+                    }
+                    Err(e) => {
+                        eprintln!("ap: warning: could not load session '{id}': {e}");
+                        Some(Session::new(id.clone(), config.provider.model.clone()))
                     }
                 }
-                None => None,
-            };
-            run_tui(config, session).await
-        }
+            }
+            None => None,
+        };
+        run_tui(config, session).await
     }
 }
 
