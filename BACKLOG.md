@@ -29,7 +29,14 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 6. [ ] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
-7. [ ] **Project awareness** — On startup, read `AGENTS.md` / `CLAUDE.md` / `.cursorrules` from cwd and inject as system context. Auto-detect language/framework.
+7. [ ] **AGENTS.md support** — Load and inject agent context from both global and project level, same convention as pi/claude code:
+    - **Global:** `~/.ap/AGENTS.md` — always injected, defines persona, coding style, preferences
+    - **Project:** `./AGENTS.md` (cwd at startup) — injected after global, overrides/extends it
+    - Both are injected into the system prompt at startup, global first then project
+    - Hot reload: if `AGENTS.md` changes during a session, pick it up on next turn
+    - Config: `[agents] global = "~/.ap/AGENTS.md"` (override path if needed), `project = true` (auto-discover from cwd, default on)
+    - Skills referenced in AGENTS.md (`## Skills` section listing skill names) trigger skill loading from `~/.ap/skills/` or `./.ap/skills/`
+    - Compatible with pi, claude code, and OpenClaw AGENTS.md conventions — same file works across all three
 
 8. [ ] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
 
