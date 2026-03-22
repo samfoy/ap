@@ -54,7 +54,16 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Job lifecycle:** `job list`, `job attach <id>` (open tmux pane), `job kill <id>`, `job logs <id>` — callable by Claude as tool calls or by user as `/job` commands in TUI input
     - Config: `[jobs] max_concurrent = 4, tmux_enabled = true, default_shell = "zsh"`
 
-10. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
+10. [ ] **Session management UX** — First-class session browsing and branching:
+    - `ap sessions` — list recent sessions with id, date, turn count, and auto-generated title (from first message)
+    - `ap --resume` — pick up the most recent session automatically
+    - `ap --resume <id>` — resume a specific session by id or fuzzy name match
+    - `ap --fork <id>` — branch from any point in a past session into a new one (copy messages up to that turn, new session id). Useful for trying a different approach without losing the original.
+    - TUI: `s` key opens a session browser overlay — scrollable list, preview pane showing last few messages, Enter to resume, `f` to fork
+    - Session titles: auto-generated from first user message (short LLM summary, cached in session file)
+    - Sessions stored at `~/.ap/sessions/<id>.json` as before
+
+11. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
     - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
     - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
     - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
