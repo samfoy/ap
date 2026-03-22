@@ -1,17 +1,17 @@
 //! Integration test: non-interactive (headless) mode.
 //!
 //! Uses `MockProvider` scripted with `TextDelta("Hello from mock") + TurnEnd`.
-//! Invokes the headless dispatch function programmatically (not via subprocess).
+//! Invokes the turn() pipeline programmatically (not via subprocess).
 //! Verifies TextChunk received, TurnEnd received, and no Error emitted.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use ap::app::{AgentLoop, UiEvent};
-use ap::config::HooksConfig;
-use ap::hooks::HookRunner;
+use ap::config::AppConfig;
 use ap::provider::{Message, Provider, ProviderError, StreamEvent};
 use ap::tools::ToolRegistry;
+use ap::turn::turn;
+use ap::types::{Conversation, Middleware, TurnEvent};
 
 use futures::stream::{self, BoxStream};
 use tokio::sync::mpsc;
@@ -48,23 +48,27 @@ impl Provider for MockProvider {
 
 // ─── Headless dispatch helper ─────────────────────────────────────────────────
 
-/// Runs the agent loop in headless mode and collects all UiEvents.
-async fn run_headless(prompt: &str, provider: Arc<dyn Provider>) -> Vec<UiEvent> {
+/// Runs one turn of the FP pipeline in headless mode and collects all TurnEvents.
+async fn run_headless_test(prompt: &str, provider: Arc<dyn Provider>) -> Vec<TurnEvent> {
     let (tx, mut rx) = mpsc::channel(64);
-    let mut agent = AgentLoop::new(
-        provider,
-        ToolRegistry::with_defaults(),
-        HookRunner::new(HooksConfig::default()),
-        tx,
-    );
+    let conv = Conversation::new("test-session", "claude-3", AppConfig::default())
+        .with_user_message(prompt);
+    let tools = ToolRegistry::with_defaults();
+    let middleware = Middleware::new();
 
-    agent.run_turn(prompt.to_string()).await.expect("run_turn failed");
-    drop(agent); // closes the channel sender
+    // Spawn so we can drain the channel concurrently (bounded channel, small mock)
+    let tx_for_turn = tx.clone();
+    let turn_handle = tokio::spawn(async move {
+        turn(conv, provider.as_ref(), &tools, &middleware, &tx_for_turn).await
+    });
+    drop(tx); // drop original so rx sees None when turn finishes
 
     let mut events = Vec::new();
     while let Some(event) = rx.recv().await {
         events.push(event);
     }
+
+    turn_handle.await.expect("turn task panicked").expect("turn failed");
     events
 }
 
@@ -81,13 +85,19 @@ async fn headless_receives_text_chunk_and_turn_end() {
         },
     ]]));
 
-    let events = run_headless("test", provider).await;
+    let events = run_headless_test("test", provider).await;
 
-    let has_text_chunk = events.iter().any(|e| matches!(e, UiEvent::TextChunk(t) if t == "Hello from mock"));
-    let has_turn_end = events.iter().any(|e| matches!(e, UiEvent::TurnEnd));
-    let has_error = events.iter().any(|e| matches!(e, UiEvent::Error(_)));
+    let has_text_chunk = events
+        .iter()
+        .any(|e| matches!(e, TurnEvent::TextChunk(t) if t == "Hello from mock"));
+    let has_turn_end = events.iter().any(|e| matches!(e, TurnEvent::TurnEnd));
+    let has_error = events.iter().any(|e| matches!(e, TurnEvent::Error(_)));
 
-    assert!(has_text_chunk, "Expected TextChunk('Hello from mock'), got: {:?}", events);
+    assert!(
+        has_text_chunk,
+        "Expected TextChunk('Hello from mock'), got: {:?}",
+        events
+    );
     assert!(has_turn_end, "Expected TurnEnd, got: {:?}", events);
     assert!(!has_error, "Unexpected Error event, got: {:?}", events);
 }
@@ -100,7 +110,9 @@ struct MockErrorProvider {
 
 impl MockErrorProvider {
     fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self {
+            message: message.into(),
+        }
     }
 }
 
@@ -119,20 +131,29 @@ impl Provider for MockErrorProvider {
 
 #[tokio::test]
 async fn headless_emits_error_on_provider_failure() {
-    // AC3: Given a provider that returns an error, UiEvent::Error is emitted
-    // and run_turn returns Err.
+    // AC3: Given a provider that returns an error, TurnEvent::Error is emitted
+    // and turn() returns Err.
     let provider = Arc::new(MockErrorProvider::new("something failed"));
 
     let (tx, mut rx) = mpsc::channel(64);
-    let mut agent = AgentLoop::new(
-        provider as Arc<dyn Provider>,
-        ToolRegistry::with_defaults(),
-        HookRunner::new(HooksConfig::default()),
-        tx,
-    );
+    let conv =
+        Conversation::new("test-session", "claude-3", AppConfig::default())
+            .with_user_message("test");
+    let tools = ToolRegistry::with_defaults();
+    let middleware = Middleware::new();
 
-    let result = agent.run_turn("test".to_string()).await;
-    drop(agent); // close the sender so rx drains
+    let tx_for_turn = tx.clone();
+    let turn_handle = tokio::spawn(async move {
+        turn(
+            conv,
+            provider.as_ref() as &dyn ap::provider::Provider,
+            &tools,
+            &middleware,
+            &tx_for_turn,
+        )
+        .await
+    });
+    drop(tx); // so rx drains after turn finishes
 
     // Collect all events
     let mut events = Vec::new();
@@ -140,20 +161,35 @@ async fn headless_emits_error_on_provider_failure() {
         events.push(event);
     }
 
-    // run_turn must return Err when the stream produces a ProviderError
-    assert!(result.is_err(), "Expected run_turn to return Err on provider failure");
+    // turn() must return Err when the stream produces a ProviderError
+    let result = turn_handle.await.expect("task panicked");
+    assert!(
+        result.is_err(),
+        "Expected turn() to return Err on provider failure"
+    );
 
-    // UiEvent::Error must be emitted before run_turn returns
-    let has_error = events.iter().any(|e| matches!(e, UiEvent::Error(_)));
-    assert!(has_error, "Expected UiEvent::Error event, got: {:?}", events);
+    // TurnEvent::Error must be emitted
+    let has_error = events.iter().any(|e| matches!(e, TurnEvent::Error(_)));
+    assert!(
+        has_error,
+        "Expected TurnEvent::Error event, got: {:?}",
+        events
+    );
 
     // The error message should contain our injected message
     let error_msg = events.iter().find_map(|e| {
-        if let UiEvent::Error(msg) = e { Some(msg.as_str()) } else { None }
+        if let TurnEvent::Error(msg) = e {
+            Some(msg.as_str())
+        } else {
+            None
+        }
     });
     assert!(
-        error_msg.map(|m| m.contains("something failed")).unwrap_or(false),
-        "Expected error to contain 'something failed', got: {:?}", error_msg
+        error_msg
+            .map(|m| m.contains("something failed"))
+            .unwrap_or(false),
+        "Expected error to contain 'something failed', got: {:?}",
+        error_msg
     );
 }
 
