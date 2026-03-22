@@ -141,6 +141,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
+
 19. [ ] **Robust file editing** — Reliable, no-friction file edits by default:
     - **No approval prompts by default** — edits apply immediately, no confirmation dialogs. Trust the user. `--safe` flag available for those who want confirmation.
     - **Dry-run / diff preview** — `--dry-run` flag shows unified diff without writing. Claude can also call `preview_edit` tool to show before applying.
@@ -150,6 +151,14 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Edit tool schema:** `{ "file": string, "old_str": string, "new_str": string }` (exact match replace, not line numbers) — same convention as Claude Code / pi
     - **Write tool:** `{ "file": string, "content": string }` — full file overwrite, always works
     - Config: `[editing] require_approval = false` (default)
+
+20. [ ] **Amazon toolchain integration** — First-class support for Ada and AWS credentials/SDK:
+    - **Ada credential management** — detect and use Ada-vended credentials automatically. Run `ada credentials update --provider isengard --account <id> --role <role>` when creds are expired. ap knows to re-credential and retry if AWS calls return 401/403.
+    - **AWS CLI/SDK awareness** — `aws` tool built-in: Claude can call AWS CLI commands directly as a tool call. Results returned as structured JSON where possible.
+    - **Profile detection** — auto-detect active AWS profile from environment (`AWS_PROFILE`, `~/.aws/config`), surface in TUI status bar
+    - **Brazil awareness** — recognize Brazil package structure, understand `brazil-build`, `brazil ws`, `brazil-recursive-cmd` patterns
+    - **Common patterns:** `ap "what's failing in my last brazil build"` auto-finds the build log; `ap "get the CloudWatch logs for service X"` uses current AWS profile
+    - Config: `[aws] ada_enabled = true, default_profile = "auto"`
 
 ---
 
