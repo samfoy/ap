@@ -1,6 +1,4 @@
-use ap::app::AgentLoop;
 use ap::config::AppConfig;
-use ap::hooks::HookRunner;
 use ap::middleware::shell_hook_bridge;
 use ap::provider::BedrockProvider;
 use ap::session::{store::SessionStore, Session};
@@ -9,7 +7,7 @@ use ap::tui::TuiApp;
 use ap::turn::turn;
 use ap::types::{Conversation, TurnEvent};
 use clap::Parser;
-use tokio::sync::mpsc;
+use std::sync::Arc;
 
 /// ap — A terminal AI coding agent powered by AWS Bedrock
 #[derive(Parser, Debug)]
@@ -70,7 +68,6 @@ async fn run_headless(
     prompt: &str,
 ) -> anyhow::Result<()> {
     use std::io::Write;
-    use std::sync::Arc;
 
     // Build the Bedrock provider
     let provider = match BedrockProvider::new(
@@ -114,72 +111,49 @@ async fn run_headless(
         _ => Conversation::new("ephemeral", config.provider.model.clone(), config.clone()),
     };
 
-    // Channel: turn() → stdout sink
-    let (tx, mut rx) = mpsc::channel::<TurnEvent>(256);
+    // Run turn() — pure function, returns (updated_conv, events)
+    let conv_with_msg = conv.with_user_message(prompt.to_string());
+    let (updated_conv, events) =
+        match turn(conv_with_msg, provider.as_ref(), &tools, &middleware).await {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("ap: error: {e}");
+                std::process::exit(1);
+            }
+        };
 
-    // Run turn() in a background task so we can drain the channel concurrently
-    let tx_for_turn = tx.clone();
-    let prompt_owned = prompt.to_string();
-    let conv_with_msg = conv.with_user_message(prompt_owned);
-    let turn_handle = tokio::spawn(async move {
-        turn(conv_with_msg, provider.as_ref(), &tools, &middleware, &tx_for_turn).await
-    });
-    drop(tx); // drop original sender; rx gets None when turn finishes
-
-    // Drain events, printing text to stdout
-    let mut exit_code = 0i32;
+    // Route events to stdout/stderr
     let stdout = std::io::stdout();
-    loop {
-        match rx.recv().await {
-            Some(TurnEvent::TextChunk(text)) => {
+    let mut exit_code = 0i32;
+    for event in &events {
+        match event {
+            TurnEvent::TextChunk(text) => {
                 let mut out = stdout.lock();
                 out.write_all(text.as_bytes()).ok();
                 out.flush().ok();
             }
-            Some(TurnEvent::ToolStart { name, .. }) => {
+            TurnEvent::ToolStart { name, .. } => {
                 eprintln!("ap: tool: {name}");
             }
-            Some(TurnEvent::ToolComplete { name, result }) => {
-                // Only surface errors — successful results are shown in context
-                let _ = name;
-                let _ = result;
+            TurnEvent::ToolComplete { .. } => {
+                // Successful results shown in context; errors surfaced via Error event
             }
-            Some(TurnEvent::TurnEnd) => {
+            TurnEvent::TurnEnd => {
                 println!(); // final newline
-                break;
             }
-            Some(TurnEvent::Error(msg)) => {
+            TurnEvent::Error(msg) => {
                 eprintln!("ap: error: {msg}");
                 exit_code = 1;
-                break;
-            }
-            None => {
-                // Channel closed — turn finished
-                break;
             }
         }
     }
 
-    // Wait for the turn task and handle its result
-    let updated_conv = match turn_handle.await {
-        Ok(Ok(c)) => Some(c),
-        Ok(Err(e)) => {
-            eprintln!("ap: error: {e}");
-            exit_code = 1;
-            None
-        }
-        Err(e) => {
-            eprintln!("ap: agent task panicked: {e}");
-            exit_code = 1;
-            None
-        }
-    };
-
     // Save conversation if session was requested and turn succeeded
-    if let (Some(id), Some(s), Some(conv)) = (&session_id, &store, updated_conv) {
-        let _ = id;
-        if let Err(e) = s.save_conversation(&conv) {
-            eprintln!("ap: warning: could not save session: {e}");
+    if exit_code == 0 {
+        if let (Some(_id), Some(s)) = (&session_id, &store) {
+            if let Err(e) = s.save_conversation(&updated_conv) {
+                eprintln!("ap: warning: could not save session: {e}");
+            }
         }
     }
 
@@ -189,9 +163,7 @@ async fn run_headless(
     Ok(())
 }
 
-async fn run_tui(config: AppConfig, session: Option<Session>) -> anyhow::Result<()> {
-    use std::sync::Arc;
-
+async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result<()> {
     // Build the Bedrock provider
     let provider = match BedrockProvider::new(
         config.provider.model.clone(),
@@ -206,20 +178,18 @@ async fn run_tui(config: AppConfig, session: Option<Session>) -> anyhow::Result<
         }
     };
 
-    // Build tools and hooks
-    let tools = ToolRegistry::with_defaults();
-    let hooks = HookRunner::new(config.hooks.clone());
-
-    // Channel: agent → TUI
-    let (ui_tx, ui_rx) = mpsc::channel(256);
-
-    // Build agent loop (with session if provided)
-    let agent = AgentLoop::with_session(provider, tools, hooks, ui_tx, session);
-
+    // Build tools, middleware, and conversation
+    let tools = Arc::new(ToolRegistry::with_defaults());
+    let middleware = Arc::new(shell_hook_bridge(&config.hooks));
     let model_name = config.provider.model.clone();
+    let conv = Arc::new(tokio::sync::Mutex::new(Conversation::new(
+        uuid::Uuid::new_v4().to_string(),
+        model_name.clone(),
+        config.clone(),
+    )));
 
     // Build and run TUI
-    let mut app = TuiApp::new(ui_rx, agent, model_name)?;
+    let mut app = TuiApp::new(conv, provider, tools, middleware, model_name)?;
     app.run().await
 }
 

@@ -72,7 +72,7 @@ fn render_main_area(frame: &mut Frame, app: &TuiApp, area: Rect) {
 }
 
 fn render_conversation(frame: &mut Frame, app: &TuiApp, area: Rect) {
-    let text = app.conversation.join("");
+    let text = app.messages.join("");
     let para = Paragraph::new(text)
         .block(Block::default().borders(Borders::ALL).title("Conversation"))
         .wrap(Wrap { trim: false })

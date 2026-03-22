@@ -1,18 +1,16 @@
 // src/turn.rs — Pure async `turn()` pipeline.
 //
 // Takes an immutable `Conversation` (with the user message already appended via
-// `Conversation::with_user_message()`) and returns a new `Conversation` with the
-// full assistant response — including any tool calls and their results —
-// appended to the message history.
+// `Conversation::with_user_message()`) and returns the updated `Conversation`
+// plus a `Vec<TurnEvent>` — no side effects, the caller routes the events.
 //
 // The caller drives the loop:
 //   ```rust
-//   let conv = turn(conv.with_user_message(input), &provider, &tools, &middleware, &tx).await?;
+//   let (conv, events) = turn(conv.with_user_message(input), &provider, &tools, &middleware).await?;
 //   ```
 
 use anyhow::Result;
 use futures::StreamExt;
-use tokio::sync::mpsc;
 
 use crate::provider::{Message, MessageContent, Provider, Role, StreamEvent};
 use crate::tools::{ToolRegistry, ToolResult};
@@ -34,18 +32,17 @@ struct PendingTool {
 /// * `provider`   — LLM streaming provider
 /// * `tools`      — registered tools available for execution
 /// * `middleware` — pre/post hooks applied at turn and tool boundaries
-/// * `tx`         — channel for streaming `TurnEvent`s to the caller
 ///
-/// Returns the updated `Conversation` (original consumed).
+/// Returns `(updated_conversation, events)`. The caller is responsible for
+/// routing events to the UI, channel, or stdout.
 pub async fn turn(
     conv: Conversation,
     provider: &dyn Provider,
     tools: &ToolRegistry,
     middleware: &Middleware,
-    tx: &mpsc::Sender<TurnEvent>,
-) -> Result<Conversation> {
+) -> Result<(Conversation, Vec<TurnEvent>)> {
     let conv = apply_pre_turn(conv, middleware);
-    turn_loop(conv, provider, tools, middleware, tx).await
+    turn_loop(conv, provider, tools, middleware).await
 }
 
 // ─── Private pipeline steps ───────────────────────────────────────────────────
@@ -79,8 +76,9 @@ async fn turn_loop(
     provider: &dyn Provider,
     tools: &ToolRegistry,
     middleware: &Middleware,
-    tx: &mpsc::Sender<TurnEvent>,
-) -> Result<Conversation> {
+) -> Result<(Conversation, Vec<TurnEvent>)> {
+    let mut all_events: Vec<TurnEvent> = Vec::new();
+
     loop {
         let tool_schemas = tools.all_schemas();
         // Clone the message snapshot so `stream` doesn't borrow `conv` for the
@@ -98,14 +96,14 @@ async fn turn_loop(
                 Ok(e) => e,
                 Err(e) => {
                     let msg = e.to_string();
-                    let _ = tx.send(TurnEvent::Error(msg.clone())).await;
+                    all_events.push(TurnEvent::Error(msg.clone()));
                     return Err(anyhow::anyhow!(msg));
                 }
             };
 
             match event {
                 StreamEvent::TextDelta(text) => {
-                    let _ = tx.send(TurnEvent::TextChunk(text.clone())).await;
+                    all_events.push(TurnEvent::TextChunk(text.clone()));
                     assistant_text.push_str(&text);
                 }
 
@@ -161,8 +159,8 @@ async fn turn_loop(
 
         // ── No tool calls → turn is complete ─────────────────────────────────
         if pending_tools.is_empty() {
-            let _ = tx.send(TurnEvent::TurnEnd).await;
-            return Ok(conv);
+            all_events.push(TurnEvent::TurnEnd);
+            return Ok((conv, all_events));
         }
 
         // ── Execute each tool call through the middleware chain ───────────────
@@ -179,12 +177,10 @@ async fn turn_loop(
             };
 
             // Emit ToolStart before any middleware so the UI can show progress
-            let _ = tx
-                .send(TurnEvent::ToolStart {
-                    name: call.name.clone(),
-                    params: call.params.clone(),
-                })
-                .await;
+            all_events.push(TurnEvent::ToolStart {
+                name: call.name.clone(),
+                params: call.params.clone(),
+            });
 
             // ── Pre-tool middleware ───────────────────────────────────────────
             let (call, pre_result) = run_pre_tool_chain(call, middleware);
@@ -202,13 +198,11 @@ async fn turn_loop(
             // ── Post-tool middleware ──────────────────────────────────────────
             exec_result = run_post_tool_chain(call.clone(), exec_result, middleware);
 
-            // Emit ToolComplete with the final result string
-            let _ = tx
-                .send(TurnEvent::ToolComplete {
-                    name: call.name.clone(),
-                    result: exec_result.content.clone(),
-                })
-                .await;
+            // Emit ToolComplete with the final result
+            all_events.push(TurnEvent::ToolComplete {
+                name: call.name.clone(),
+                result: exec_result.content.clone(),
+            });
 
             tool_results.push(MessageContent::ToolResult {
                 tool_use_id: pending.id,
@@ -292,7 +286,6 @@ mod tests {
     use futures::stream::{self, BoxStream};
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
-    use tokio::sync::mpsc;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -307,15 +300,6 @@ mod tests {
             input_tokens: 1,
             output_tokens: 1,
         }
-    }
-
-    /// Collect all events from the channel (non-blocking drain).
-    async fn drain(rx: &mut mpsc::Receiver<TurnEvent>) -> Vec<TurnEvent> {
-        let mut events = Vec::new();
-        while let Ok(e) = rx.try_recv() {
-            events.push(e);
-        }
-        events
     }
 
     // ── MockProvider ──────────────────────────────────────────────────────────
@@ -372,15 +356,12 @@ mod tests {
             turn_end_event(),
         ]]);
 
-        let (tx, mut rx) = mpsc::channel(16);
         let tools = ToolRegistry::new();
         let middleware = Middleware::default();
 
-        let result_conv = turn(make_conv(), &provider, &tools, &middleware, &tx)
+        let (result_conv, events) = turn(make_conv(), &provider, &tools, &middleware)
             .await
             .expect("turn should succeed");
-
-        let events = drain(&mut rx).await;
 
         // TextChunk("Hello") and TurnEnd emitted
         assert!(
@@ -414,15 +395,12 @@ mod tests {
             turn_end_event(),
         ]]);
 
-        let (tx, mut rx) = mpsc::channel(16);
         let tools = ToolRegistry::new();
         let middleware = Middleware::default();
 
-        turn(make_conv(), &provider, &tools, &middleware, &tx)
+        let (_, events) = turn(make_conv(), &provider, &tools, &middleware)
             .await
             .expect("turn should succeed");
-
-        let events = drain(&mut rx).await;
 
         let chunks: Vec<&str> = events
             .iter()
@@ -465,15 +443,12 @@ mod tests {
             ],
         ]);
 
-        let (tx, mut rx) = mpsc::channel(32);
         let tools = ToolRegistry::with_defaults();
         let middleware = Middleware::default();
 
-        let result_conv = turn(make_conv(), &provider, &tools, &middleware, &tx)
+        let (result_conv, events) = turn(make_conv(), &provider, &tools, &middleware)
             .await
             .expect("turn should succeed");
-
-        let events = drain(&mut rx).await;
 
         // ToolStart and ToolComplete events emitted
         assert!(
@@ -504,23 +479,21 @@ mod tests {
     async fn turn_provider_error_emits_error_and_returns_err() {
         let provider = ErrorProvider;
 
-        let (tx, mut rx) = mpsc::channel(16);
         let tools = ToolRegistry::new();
         let middleware = Middleware::default();
 
-        let result = turn(make_conv(), &provider, &tools, &middleware, &tx).await;
+        let result = turn(make_conv(), &provider, &tools, &middleware).await;
 
         assert!(result.is_err(), "turn should return Err on provider error");
 
-        let events = drain(&mut rx).await;
-        let has_error = events.iter().any(|e| {
-            if let TurnEvent::Error(msg) = e {
-                msg.contains("network failure")
-            } else {
-                false
-            }
-        });
-        assert!(has_error, "expected TurnEvent::Error with 'network failure'");
+        // When turn() returns Err, events are not available — but the error itself
+        // is returned as Err(e) and the TurnEvent::Error was collected before returning.
+        // We verify the error message contains the expected text.
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("network failure"),
+            "expected error to contain 'network failure', got: {err_msg}"
+        );
     }
 
     // ── AC5: Pre-tool Block middleware skips execution ────────────────────────
@@ -545,7 +518,6 @@ mod tests {
             ],
         ]);
 
-        let (tx, mut rx) = mpsc::channel(32);
         let tools = ToolRegistry::with_defaults();
 
         // Middleware that blocks all tool calls
@@ -554,11 +526,9 @@ mod tests {
             ToolMiddlewareResult::Block(format!("not allowed: {}", call.name))
         }));
 
-        turn(make_conv(), &provider, &tools, &middleware, &tx)
+        let (_, events) = turn(make_conv(), &provider, &tools, &middleware)
             .await
             .expect("turn should succeed even when tool is blocked");
-
-        let events = drain(&mut rx).await;
 
         // ToolComplete event should carry the block reason
         let complete_evt = events.iter().find(|e| {
@@ -594,7 +564,6 @@ mod tests {
             ],
         ]);
 
-        let (tx, mut rx) = mpsc::channel(32);
         let tools = ToolRegistry::with_defaults();
 
         let mut middleware = Middleware::default();
@@ -602,11 +571,9 @@ mod tests {
             ToolMiddlewareResult::Transform(ToolResult::ok("mocked result"))
         }));
 
-        turn(make_conv(), &provider, &tools, &middleware, &tx)
+        let (_, events) = turn(make_conv(), &provider, &tools, &middleware)
             .await
             .expect("turn should succeed");
-
-        let events = drain(&mut rx).await;
 
         // ToolComplete carries the mocked result
         let complete_evt = events.iter().find(|e| {
@@ -639,7 +606,6 @@ mod tests {
             ],
         ]);
 
-        let (tx, mut rx) = mpsc::channel(32);
         let tools = ToolRegistry::with_defaults();
 
         let mut middleware = Middleware::default();
@@ -649,11 +615,9 @@ mod tests {
             ToolMiddlewareResult::Allow(call)
         }));
 
-        turn(make_conv(), &provider, &tools, &middleware, &tx)
+        let (_, events) = turn(make_conv(), &provider, &tools, &middleware)
             .await
             .expect("turn should succeed");
-
-        let events = drain(&mut rx).await;
 
         // Tool was actually executed (ToolComplete present)
         assert!(

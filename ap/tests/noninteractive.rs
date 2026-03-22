@@ -14,7 +14,6 @@ use ap::turn::turn;
 use ap::types::{Conversation, Middleware, TurnEvent};
 
 use futures::stream::{self, BoxStream};
-use tokio::sync::mpsc;
 
 // ─── MockProvider ─────────────────────────────────────────────────────────────
 
@@ -48,27 +47,16 @@ impl Provider for MockProvider {
 
 // ─── Headless dispatch helper ─────────────────────────────────────────────────
 
-/// Runs one turn of the FP pipeline in headless mode and collects all TurnEvents.
+/// Runs one turn of the FP pipeline in headless mode and returns all TurnEvents.
 async fn run_headless_test(prompt: &str, provider: Arc<dyn Provider>) -> Vec<TurnEvent> {
-    let (tx, mut rx) = mpsc::channel(64);
     let conv = Conversation::new("test-session", "claude-3", AppConfig::default())
         .with_user_message(prompt);
     let tools = ToolRegistry::with_defaults();
     let middleware = Middleware::new();
 
-    // Spawn so we can drain the channel concurrently (bounded channel, small mock)
-    let tx_for_turn = tx.clone();
-    let turn_handle = tokio::spawn(async move {
-        turn(conv, provider.as_ref(), &tools, &middleware, &tx_for_turn).await
-    });
-    drop(tx); // drop original so rx sees None when turn finishes
-
-    let mut events = Vec::new();
-    while let Some(event) = rx.recv().await {
-        events.push(event);
-    }
-
-    turn_handle.await.expect("turn task panicked").expect("turn failed");
+    let (_, events) = turn(conv, provider.as_ref(), &tools, &middleware)
+        .await
+        .expect("turn failed");
     events
 }
 
@@ -127,69 +115,38 @@ impl Provider for MockErrorProvider {
     }
 }
 
-// ─── Test: Error event on provider failure ────────────────────────────────────
+// ─── Test: Error returned on provider failure ─────────────────────────────────
 
 #[tokio::test]
 async fn headless_emits_error_on_provider_failure() {
-    // AC3: Given a provider that returns an error, TurnEvent::Error is emitted
-    // and turn() returns Err.
+    // AC3: Given a provider that returns an error, turn() returns Err.
     let provider = Arc::new(MockErrorProvider::new("something failed"));
 
-    let (tx, mut rx) = mpsc::channel(64);
     let conv =
         Conversation::new("test-session", "claude-3", AppConfig::default())
             .with_user_message("test");
     let tools = ToolRegistry::with_defaults();
     let middleware = Middleware::new();
 
-    let tx_for_turn = tx.clone();
-    let turn_handle = tokio::spawn(async move {
-        turn(
-            conv,
-            provider.as_ref() as &dyn ap::provider::Provider,
-            &tools,
-            &middleware,
-            &tx_for_turn,
-        )
-        .await
-    });
-    drop(tx); // so rx drains after turn finishes
-
-    // Collect all events
-    let mut events = Vec::new();
-    while let Some(event) = rx.recv().await {
-        events.push(event);
-    }
+    let result = turn(
+        conv,
+        provider.as_ref() as &dyn ap::provider::Provider,
+        &tools,
+        &middleware,
+    )
+    .await;
 
     // turn() must return Err when the stream produces a ProviderError
-    let result = turn_handle.await.expect("task panicked");
     assert!(
         result.is_err(),
         "Expected turn() to return Err on provider failure"
     );
 
-    // TurnEvent::Error must be emitted
-    let has_error = events.iter().any(|e| matches!(e, TurnEvent::Error(_)));
-    assert!(
-        has_error,
-        "Expected TurnEvent::Error event, got: {:?}",
-        events
-    );
-
     // The error message should contain our injected message
-    let error_msg = events.iter().find_map(|e| {
-        if let TurnEvent::Error(msg) = e {
-            Some(msg.as_str())
-        } else {
-            None
-        }
-    });
+    let err_msg = result.unwrap_err().to_string();
     assert!(
-        error_msg
-            .map(|m| m.contains("something failed"))
-            .unwrap_or(false),
-        "Expected error to contain 'something failed', got: {:?}",
-        error_msg
+        err_msg.contains("something failed"),
+        "Expected error to contain 'something failed', got: {err_msg}"
     );
 }
 
