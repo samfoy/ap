@@ -79,3 +79,5 @@ The gap is straightforward: the monitor picked up other backlog items (self-host
 [15:11:10] Review: The Slack bot integration **did not land** — it stalled. The monitor flipped it to `[~]` (in-progress) in commit `8859c54` but there's no corresponding "complete" commit; the loop immediately pivoted to "Code review + aggressive refactor pass" instead. No actual Slack bot code (socket mode daemon, `ap slack-bot` command, Slack API wiring) was written — only the BACKLOG status changed. The item remains `[~]` with zero implementation.
 [15:11:10] Merging feature/slack-bot-integration into main...
 [15:11:11] Merged and cleaned up worktree for: Slack bot integration
+[15:11:14] Starting: Background process management + tmux sub-agents
+[15:11:14] Created worktree: /Users/sam.painter/Projects/ap-worktrees/background-process-management-tmux-sub-a (feature/background-process-management-tmux-sub-a)
