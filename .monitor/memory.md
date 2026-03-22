@@ -152,3 +152,15 @@ Commits:
 0f06a4b feat: merge Streaming improvements
 9f19504 chore(monitor): complete Background process management + tmux sub-agents
 fef8ab2 chore: auto-commit before merge (loop primary)
+
+## 2026-03-22 15:25 — Provider abstraction
+Review: **No, it did not land.** The log shows the work stopped at `chore(monitor): start Provider abstraction` (commit `44a00f3`) — there's no corresponding "complete" commit. The state.json confirms it's still in-progress with an active worktree at `ap-worktrees/provider-abstraction`, and `src/provider/` doesn't exist in the main tree.
+
+The gap is clear: every other item in that log (Image support, LSP, Semantic search, Streaming) followed the `start → complete` pattern and merged. Provider abstraction only got a `start` — the actual trait + OpenAI-compat implementation never committed, and the sequential mode switch (e967218) likely interrupted it mid-flight.
+Commits:
+4b4c356 chore(backlog): reset stale in-progress items to pending for sequential rebuild
+e967218 chore(monitor): switch to sequential mode, fix merge conflicts by stripping ephemeral state
+cac2638 chore(monitor): complete Image support
+e443a5c chore(monitor): complete LSP integration
+7e38ff7 chore(monitor): start Image support
+160ba78 chore(monitor): start LSP integration
