@@ -118,3 +118,15 @@ f481ae4 chore(monitor): complete Slack bot integration
 7ad12cb chore(monitor): complete Code review + aggressive refactor pass
 580d618 chore(monitor): complete Kiro provider
 8859c54 chore(monitor): start Slack bot integration
+
+## 2026-03-22 15:13 — Semantic search over sessions + directories
+Review: **No, it did not land.** The "Semantic search" task only has a `start` monitor commit (`0e3871d`) — which touches nothing but `.monitor/` bookkeeping and a BACKLOG status update — and there is no corresponding `complete` commit or merge. Zero source code was written: `grep` finds no `semantic`, `embed`, `vector`, or `search` symbols anywhere in `src/`.
+
+The gap is total: `fastembed-rs` embeddings, the HNSW index, session recall, the `search` tool, incremental watching — none of it exists. The loop appears to have been interrupted or pivoted to the next task (Streaming improvements) before doing any real work on this one.
+Commits:
+6d74a18 chore(monitor): start Streaming improvements
+e42f093 chore(monitor): start Background process management + tmux sub-agents
+f481ae4 chore(monitor): complete Slack bot integration
+7ad12cb chore(monitor): complete Code review + aggressive refactor pass
+580d618 chore(monitor): complete Kiro provider
+8859c54 chore(monitor): start Slack bot integration
