@@ -1,6 +1,7 @@
 pub mod app;
 pub mod config;
 pub mod hooks;
+pub mod middleware;
 pub mod provider;
 pub mod session;
 pub mod tools;
