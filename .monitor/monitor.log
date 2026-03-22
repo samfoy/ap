@@ -192,3 +192,6 @@ Traceback (most recent call last):
 [15:45:44] ♥ alive — active: none
 [15:45:44] Starting: Conversation context management
 [15:45:44] Worktree already exists: /Users/sam.painter/Projects/ap-worktrees/conversation-context-management
+[15:45:47] WARNING: Ralph may not have started for Conversation context management
+[15:46:17] Starting: Conversation context management
+[15:46:17] Worktree already exists: /Users/sam.painter/Projects/ap-worktrees/conversation-context-management
