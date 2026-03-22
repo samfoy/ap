@@ -1,8 +1,8 @@
 ---
-status: pending
+status: completed
 created: 2026-03-22
-started: null
-completed: null
+started: 2026-03-22
+completed: 2026-03-22
 ---
 # Task: Tool Trait + 4 Built-in Tools
 

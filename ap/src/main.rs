@@ -1,4 +1,5 @@
 mod config;
+pub mod provider;
 pub mod tools;
 
 use clap::Parser;
