@@ -116,3 +116,9 @@ The gap is total: `fastembed-rs` embeddings, the HNSW index, session recall, the
 [15:14:21] Review: No LSP code landed at all. The git log you shared shows work on **Streaming improvements**, **Semantic search**, and **Background process management/tmux sub-agents** — none of which is LSP. The LSP integration loop has only just been *started* (`160ba78 chore(monitor): start LSP integration`) and hasn't produced a merge commit yet, meaning it's either still in-flight or stalled. There are zero LSP-related files anywhere in `src/`.
 [15:14:21] Merging feature/lsp-integration into main...
 [15:14:22] Merged and cleaned up worktree for: LSP integration
+[15:14:25] LOOP_COMPLETE: Image support
+[15:14:47] Review: **No, it did not land.** The git log you provided ends at the Streaming improvements merge (`0f06a4b`) — Image support only appears in two subsequent monitor commits (`7e38ff7 start`, with no matching `complete` commit), and the worktree exists at `ap-worktrees/image-support` but was never merged back. BACKLOG.md still shows Image support as `[~]` (in progress).
+
+The gap is clear: every other item in that log follows a `start → complete → merge` pattern, but Image support stalled after `start` — no code was written, no merge commit exists, and the feature (`@image.png` syntax, base64 vision messages) is entirely absent from `ap/src/`.
+[15:14:47] Merging feature/image-support into main...
+[15:14:48] Merged and cleaned up worktree for: Image support

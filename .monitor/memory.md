@@ -140,3 +140,15 @@ Commits:
 9f19504 chore(monitor): complete Background process management + tmux sub-agents
 fef8ab2 chore: auto-commit before merge (loop primary)
 0e3871d chore(monitor): start Semantic search over sessions + directories
+
+## 2026-03-22 15:14 — Image support
+Review: **No, it did not land.** The git log you provided ends at the Streaming improvements merge (`0f06a4b`) — Image support only appears in two subsequent monitor commits (`7e38ff7 start`, with no matching `complete` commit), and the worktree exists at `ap-worktrees/image-support` but was never merged back. BACKLOG.md still shows Image support as `[~]` (in progress).
+
+The gap is clear: every other item in that log follows a `start → complete → merge` pattern, but Image support stalled after `start` — no code was written, no merge commit exists, and the feature (`@image.png` syntax, base64 vision messages) is entirely absent from `ap/src/`.
+Commits:
+160ba78 chore(monitor): start LSP integration
+994a46d chore(monitor): complete Semantic search over sessions + directories
+4ea6c30 chore(monitor): complete Streaming improvements
+0f06a4b feat: merge Streaming improvements
+9f19504 chore(monitor): complete Background process management + tmux sub-agents
+fef8ab2 chore: auto-commit before merge (loop primary)
