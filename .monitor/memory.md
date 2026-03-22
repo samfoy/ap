@@ -72,3 +72,15 @@ c3ada79 feat: merge Self-hosting (ap builds ap)
 5305981 chore: auto-commit before merge (loop primary)
 099b690 chore(monitor): start Model switching
 e5bce2e chore(monitor): start Session management UX
+
+## 2026-03-22 15:10 — Code review + aggressive refactor pass
+Review: **It hasn't landed at all — it's barely started.** The worktree exists at `ap-worktrees/code-review-aggressive-refactor-pass` and the monitor fired it up, but there are zero source code changes committed: only `.monitor-ralph.log` and ralph metadata are dirty. The loop log shows iteration 1 just kicked off seconds ago, and the scratchpad inside the worktree is actually recycled from the skill-system task (wrong context), suggesting the loop may be disoriented.
+
+**The gap:** the commits in your log (`e8a1520` back to `3ec5824`) cover three *other* tasks (Self-hosting, Session management UX, Kiro provider start) — the refactor task is the next one queued by the monitor (`2952082 chore(monitor): start Code review + aggressive refactor pass`) and is currently in-flight, not merged. Nothing to review yet.
+Commits:
+e8a1520 chore(monitor): start Kiro provider
+830e5a1 chore(monitor): complete Session management UX
+51db87d chore(monitor): complete Self-hosting (ap builds ap)
+c3ada79 feat: merge Self-hosting (ap builds ap)
+5305981 chore: auto-commit before merge (loop primary)
+099b690 chore(monitor): start Model switching
