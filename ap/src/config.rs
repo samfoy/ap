@@ -51,6 +51,39 @@ impl Default for ToolsConfig {
     }
 }
 
+fn default_keep_recent() -> usize {
+    20
+}
+
+fn default_threshold() -> f32 {
+    0.80
+}
+
+/// Configuration for context compression/summarization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ContextConfig {
+    /// Token limit that triggers compression. `None` disables compression.
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Number of recent messages to keep verbatim during compression.
+    #[serde(default = "default_keep_recent")]
+    pub keep_recent: usize,
+    /// Fraction of `limit` at which compression is triggered (e.g. 0.80).
+    #[serde(default = "default_threshold")]
+    pub threshold: f32,
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            limit: None,
+            keep_recent: default_keep_recent(),
+            threshold: default_threshold(),
+        }
+    }
+}
+
 /// Configuration for the skill injection middleware.
 #[derive(Debug, Clone)]
 pub struct SkillsConfig {
@@ -83,6 +116,8 @@ pub struct AppConfig {
     pub tools: ToolsConfig,
     #[serde(skip)]
     pub skills: SkillsConfig,
+    #[serde(default)]
+    pub context: ContextConfig,
 }
 
 // ─── Fine-grained table overlay ───────────────────────────────────────────
@@ -152,6 +187,19 @@ fn overlay_from_table(mut base: AppConfig, table: toml::Table) -> AppConfig {
                     .map(PathBuf::from)
                     .collect();
                 base.skills.dirs = Some(dirs);
+            }
+        }
+    }
+    if let Some(toml::Value::Table(ct)) = table.get("context") {
+        if let Ok(c) = toml::Value::Table(ct.clone()).try_into::<ContextConfig>() {
+            if ct.contains_key("limit") {
+                base.context.limit = c.limit;
+            }
+            if ct.contains_key("keep_recent") {
+                base.context.keep_recent = c.keep_recent;
+            }
+            if ct.contains_key("threshold") {
+                base.context.threshold = c.threshold;
             }
         }
     }
@@ -364,5 +412,55 @@ max_injected = -1
         );
         let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
         assert_eq!(cfg.skills.max_injected, 0);
+    }
+
+    // ── ContextConfig tests ─────────────────────────────────────────────
+
+    #[test]
+    fn context_config_defaults() {
+        let ctx = ContextConfig::default();
+        assert_eq!(ctx.limit, None);
+        assert_eq!(ctx.keep_recent, 20);
+        assert!((ctx.threshold - 0.80).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn context_config_toml_limit() {
+        let project = write_toml("[context]\nlimit = 100000\n");
+        let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
+        assert_eq!(cfg.context.limit, Some(100_000));
+        assert_eq!(cfg.context.keep_recent, 20);
+        assert!((cfg.context.threshold - 0.80).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn context_config_toml_full() {
+        let project = write_toml(
+            r#"
+[context]
+limit = 50000
+keep_recent = 10
+threshold = 0.75
+"#,
+        );
+        let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
+        assert_eq!(cfg.context.limit, Some(50_000));
+        assert_eq!(cfg.context.keep_recent, 10);
+        assert!((cfg.context.threshold - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn context_config_missing_keys_preserve_defaults() {
+        let project = write_toml("[context]\nlimit = 200000\n");
+        let cfg = AppConfig::load_with_paths(None, Some(project.path())).unwrap();
+        assert_eq!(cfg.context.limit, Some(200_000));
+        assert_eq!(cfg.context.keep_recent, 20);
+        assert!((cfg.context.threshold - 0.80).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn context_config_no_auto_summarize_when_limit_none() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.context.limit, None);
     }
 }

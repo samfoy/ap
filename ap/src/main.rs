@@ -5,6 +5,7 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::must_use_candidate)]
 use ap::config::AppConfig;
+use ap::context::maybe_compress_context;
 use ap::discovery::discover;
 use ap::middleware::shell_hook_bridge;
 use ap::provider::BedrockProvider;
@@ -29,13 +30,22 @@ struct Args {
     /// Resume a previous session by ID
     #[arg(short = 's', long = "session")]
     session: Option<String>,
+
+    /// Override the context limit (in tokens) from the config file
+    #[arg(long)]
+    context_limit: Option<u32>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     // Load config (merge global + project); warn but don't exit on failure
-    let config = AppConfig::load().unwrap_or_default();
+    let mut config = AppConfig::load().unwrap_or_default();
+
+    // CLI flag overrides config file value
+    if let Some(limit) = args.context_limit {
+        config.context.limit = Some(limit);
+    }
 
     if let Some(prompt) = args.prompt {
         // Non-interactive (headless) mode — session handled inside run_headless
@@ -68,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_headless(
     config: AppConfig,
     session_id: Option<String>,
@@ -150,8 +161,36 @@ async fn run_headless(
 
     // Run turn() — pure function, returns (updated_conv, events)
     let conv_with_msg = conv.with_user_message(prompt.to_string());
+
+    // Conditionally compress context before turn(). Clone first so we have a
+    // fallback if maybe_compress_context returns Err (ownership is moved below).
+    let conv_to_use = if config.context.limit.is_some() {
+        let fallback = conv_with_msg.clone();
+        match maybe_compress_context(conv_with_msg, &config.context, provider.as_ref()).await {
+            Ok((c, Some(TurnEvent::ContextSummarized {
+                messages_before,
+                messages_after,
+                tokens_before,
+                tokens_after,
+            }))) => {
+                eprintln!(
+                    "ap: context summarized: {messages_before}→{messages_after} messages, \
+                     {tokens_before}→{tokens_after} tokens"
+                );
+                c
+            }
+            Ok((c, _)) => c,
+            Err(e) => {
+                eprintln!("ap: warn: context compression failed: {e}");
+                fallback
+            }
+        }
+    } else {
+        conv_with_msg
+    };
+
     let (updated_conv, events) =
-        match turn(conv_with_msg, provider.as_ref(), &tools, &middleware).await {
+        match turn(conv_to_use, provider.as_ref(), &tools, &middleware).await {
             Ok(result) => result,
             Err(e) => {
                 eprintln!("ap: error: {e}");
@@ -198,6 +237,9 @@ fn route_headless_events(events: &[TurnEvent]) -> i32 {
             TurnEvent::Error(msg) => {
                 eprintln!("ap: error: {msg}");
                 exit_code = 1;
+            }
+            TurnEvent::ContextSummarized { .. } => {
+                eprintln!("context summarized");
             }
         }
     }
@@ -265,7 +307,7 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
     let conv = Arc::new(tokio::sync::Mutex::new(initial_conv));
 
     // Build and run TUI
-    let mut app = TuiApp::new(conv, provider, tools, middleware, model_name)?;
+    let mut app = TuiApp::new(conv, provider, tools, middleware, model_name, config.context.limit)?;
     app.run().await
 }
 

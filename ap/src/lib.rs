@@ -1,4 +1,5 @@
 pub mod config;
+pub mod context;
 pub mod discovery;
 pub mod hooks;
 pub mod middleware;

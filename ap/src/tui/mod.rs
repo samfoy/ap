@@ -26,6 +26,8 @@ use crate::provider::Provider;
 use crate::tools::ToolRegistry;
 use crate::turn::turn;
 use crate::types::{Conversation, Middleware, TurnEvent};
+use crate::context::maybe_compress_context;
+use crate::config::ContextConfig;
 
 pub mod events;
 pub mod ui;
@@ -197,6 +199,13 @@ pub struct TuiApp {
     /// Accumulated output token count across all turns.
     pub total_output_tokens: u32,
 
+    /// Most recent input token count (from the last Usage event).
+    /// Not cumulative — replaced on each `TurnEvent::Usage`.
+    pub last_input_tokens: u32,
+
+    /// Optional context token limit for compression (from `AppConfig`).
+    pub context_limit: Option<u32>,
+
     /// Sender side of the UI event channel (for the spawned turn task).
     ui_tx: mpsc::Sender<TurnEvent>,
 
@@ -226,6 +235,7 @@ impl TuiApp {
         tools: Arc<ToolRegistry>,
         middleware: Arc<Middleware>,
         model_name: String,
+        context_limit: Option<u32>,
     ) -> Result<Self> {
         let (ui_tx, ui_rx) = mpsc::channel(256);
         Ok(Self {
@@ -242,6 +252,8 @@ impl TuiApp {
             is_waiting: false,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            last_input_tokens: 0,
+            context_limit,
             ui_tx,
             ui_rx: Some(ui_rx),
             conv,
@@ -254,6 +266,13 @@ impl TuiApp {
     /// Headless constructor used in unit tests — no terminal I/O, no real provider.
     #[cfg(test)]
     pub fn headless() -> Self {
+        Self::headless_with_limit(None)
+    }
+
+    /// Headless constructor with an explicit context limit — for tests that need to exercise
+    /// the compression UI path. `headless()` delegates here with `None`.
+    #[cfg(test)]
+    pub fn headless_with_limit(context_limit: Option<u32>) -> Self {
         use crate::config::AppConfig;
 
         let (ui_tx, ui_rx) = mpsc::channel(256);
@@ -291,6 +310,8 @@ impl TuiApp {
             is_waiting: false,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            last_input_tokens: 0,
+            context_limit,
             ui_tx,
             ui_rx: Some(ui_rx),
             conv,
@@ -402,11 +423,40 @@ impl TuiApp {
         let tools = Arc::clone(&self.tools);
         let middleware = Arc::clone(&self.middleware);
         let tx = self.ui_tx.clone();
+        // Capture Copy scalars for context compression (avoids borrowing self in async block)
+        let context_limit = self.context_limit;
+        let keep_recent = {
+            let conv = self.conv.try_lock().map(|c| c.config.context.keep_recent);
+            conv.unwrap_or(20)
+        };
+        let threshold = {
+            let conv = self.conv.try_lock().map(|c| c.config.context.threshold);
+            conv.unwrap_or(0.8)
+        };
 
         tokio::spawn(async move {
             // Snapshot + append user message (pure, doesn't mutate Arc)
-            let c = conv_arc.lock().await.clone().with_user_message(trimmed);
-            match turn(c, &*provider, &tools, &middleware).await {
+            let conv_with_msg = conv_arc.lock().await.clone().with_user_message(trimmed);
+
+            // Conditionally compress context before the turn
+            let conv_to_use = if let Some(limit) = context_limit {
+                let config = ContextConfig { limit: Some(limit), keep_recent, threshold };
+                match maybe_compress_context(conv_with_msg, &config, &*provider).await {
+                    Ok((c, Some(evt))) => {
+                        tx.send(evt).await.ok();
+                        c
+                    }
+                    Ok((c, None)) => c,
+                    Err(e) => {
+                        tx.send(TurnEvent::Error(e.to_string())).await.ok();
+                        return;
+                    }
+                }
+            } else {
+                conv_with_msg
+            };
+
+            match turn(conv_to_use, &*provider, &tools, &middleware).await {
                 Ok((new_conv, events)) => {
                     // Update shared conversation
                     *conv_arc.lock().await = new_conv;
@@ -487,12 +537,24 @@ impl TuiApp {
             TurnEvent::Usage { input_tokens, output_tokens } => {
                 self.total_input_tokens += input_tokens;
                 self.total_output_tokens += output_tokens;
+                self.last_input_tokens = input_tokens;
             }
             TurnEvent::Error(e) => {
                 self.chat_history.push(ChatEntry::AssistantDone(vec![ChatBlock::Text(
                     format!("\n[Error] {e}\n"),
                 )]));
                 self.is_waiting = false;
+            }
+            TurnEvent::ContextSummarized { messages_before, messages_after, tokens_after, .. } => {
+                self.chat_history.push(ChatEntry::AssistantDone(vec![ChatBlock::Text(
+                    format!(
+                        "\n[Context compressed: {messages_before} → {messages_after} messages]\n"
+                    ),
+                )]));
+                self.last_input_tokens = tokens_after;
+                if self.scroll_pinned {
+                    self.scroll_offset = usize::MAX;
+                }
             }
         }
     }
@@ -882,5 +944,60 @@ mod tests {
             app.scroll_offset, 7,
             "TurnEnd should not change scroll_offset when unpinned"
         );
+    }
+
+    // ─── Step 4: ContextSummarized + last_input_tokens ───────────────────────
+
+    #[test]
+    fn handle_ui_event_context_summarized_appends_notice() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ContextSummarized {
+            messages_before: 10,
+            messages_after: 3,
+            tokens_before: 5000,
+            tokens_after: 500,
+        });
+        assert_eq!(app.chat_history.len(), 1, "ContextSummarized should append exactly 1 entry");
+    }
+
+    #[test]
+    fn handle_ui_event_usage_updates_last_input_tokens() {
+        let mut app = TuiApp::headless();
+        assert_eq!(app.last_input_tokens, 0);
+        app.handle_ui_event(TurnEvent::Usage { input_tokens: 5000, output_tokens: 100 });
+        assert_eq!(app.last_input_tokens, 5000);
+    }
+
+    #[test]
+    fn handle_ui_event_usage_still_accumulates_totals() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::Usage { input_tokens: 3000, output_tokens: 100 });
+        app.handle_ui_event(TurnEvent::Usage { input_tokens: 4000, output_tokens: 200 });
+        assert_eq!(app.total_input_tokens, 7000, "total_input_tokens should accumulate");
+        assert_eq!(app.last_input_tokens, 4000, "last_input_tokens should be the most recent value");
+    }
+
+    #[test]
+    fn handle_ui_event_context_summarized_sets_last_input_tokens() {
+        let mut app = TuiApp::headless();
+        app.handle_ui_event(TurnEvent::ContextSummarized {
+            messages_before: 10,
+            messages_after: 3,
+            tokens_before: 5000,
+            tokens_after: 500,
+        });
+        assert_eq!(app.last_input_tokens, 500, "ContextSummarized should update last_input_tokens to tokens_after");
+    }
+
+    #[test]
+    fn tuiapp_new_stores_context_limit() {
+        let app = TuiApp::headless_with_limit(Some(50_000));
+        assert_eq!(app.context_limit, Some(50_000));
+    }
+
+    #[test]
+    fn headless_with_limit_none_matches_headless() {
+        let app = TuiApp::headless_with_limit(None);
+        assert_eq!(app.context_limit, None);
     }
 }
