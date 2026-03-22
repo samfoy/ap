@@ -60,6 +60,13 @@ impl Conversation {
         self.system_prompt = Some(prompt.into());
         self
     }
+
+    /// Return a new `Conversation` with the messages replaced by the given list.
+    /// All other fields (id, model, config, system_prompt) are preserved.
+    pub fn with_messages(mut self, messages: Vec<Message>) -> Self {
+        self.messages = messages;
+        self
+    }
 }
 
 // ─── TurnEvent ────────────────────────────────────────────────────────────────
@@ -89,6 +96,13 @@ pub enum TurnEvent {
     },
     /// An unrecoverable error occurred.
     Error(String),
+    /// Context was compressed — some leading messages replaced by a summary.
+    ContextSummarized {
+        messages_before: usize,
+        messages_after: usize,
+        tokens_before: u32,
+        tokens_after: u32,
+    },
 }
 
 // ─── ToolCall ─────────────────────────────────────────────────────────────────
@@ -212,6 +226,32 @@ mod tests {
             assert_eq!(output_tokens, 20);
         } else {
             panic!("expected Usage");
+        }
+    }
+
+    // AC-Step4-1: ContextSummarized is clonable and fields roundtrip
+    #[test]
+    fn turn_event_context_summarized_clonable() {
+        let event = TurnEvent::ContextSummarized {
+            messages_before: 10,
+            messages_after: 3,
+            tokens_before: 5000,
+            tokens_after: 500,
+        };
+        let cloned = event.clone();
+        if let TurnEvent::ContextSummarized {
+            messages_before,
+            messages_after,
+            tokens_before,
+            tokens_after,
+        } = cloned
+        {
+            assert_eq!(messages_before, 10);
+            assert_eq!(messages_after, 3);
+            assert_eq!(tokens_before, 5000);
+            assert_eq!(tokens_after, 500);
+        } else {
+            panic!("expected ContextSummarized");
         }
     }
 

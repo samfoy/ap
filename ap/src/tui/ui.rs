@@ -53,6 +53,22 @@ pub fn render(frame: &mut Frame, app: &TuiApp) {
 
 // ─── Status bar ───────────────────────────────────────────────────────────────
 
+/// Format the `ctx:` segment of the status bar.
+///
+/// Always shows `ctx: XX.Xk`. When `context_limit` is `Some`, also shows
+/// `/YYYk (ZZ%)`.
+pub(crate) fn format_ctx_segment(last_input_tokens: u32, context_limit: Option<u32>) -> String {
+    let current_k = last_input_tokens as f32 / 1_000.0;
+    context_limit.map_or_else(
+        || format!("ctx: {current_k:.1}k"),
+        |limit| {
+            let limit_k = limit as f32 / 1_000.0;
+            let pct = (last_input_tokens as f32 / limit as f32 * 100.0).round() as u32;
+            format!("ctx: {current_k:.1}k/{limit_k:.0}k ({pct}%)")
+        },
+    )
+}
+
 fn render_status_bar(frame: &mut Frame, app: &TuiApp, area: Rect) {
     let mode_label = match app.mode {
         AppMode::Normal => "NORMAL",
@@ -62,14 +78,16 @@ fn render_status_bar(frame: &mut Frame, app: &TuiApp, area: Rect) {
     let output_k = app.total_output_tokens as f64 / 1_000.0;
     let cost = (app.total_input_tokens as f64 / 1_000_000.0) * COST_PER_M_INPUT
         + (app.total_output_tokens as f64 / 1_000_000.0) * COST_PER_M_OUTPUT;
+    let ctx_segment = format_ctx_segment(app.last_input_tokens, app.context_limit);
     let text = format!(
-        " ap │ {} │ {} │ Msgs: {} │ Tokens: ↑{:.1}k ↓{:.1}k │ Cost: ${:.4}",
+        " ap │ {} │ {} │ Msgs: {} │ Tokens: ↑{:.1}k ↓{:.1}k │ Cost: ${:.4} │ {}",
         app.model_name,
         mode_label,
         app.conversation_messages,
         input_k,
         output_k,
         cost,
+        ctx_segment,
     );
     let status = Paragraph::new(text).style(
         Style::default()
@@ -451,5 +469,20 @@ mod tests {
 
         // Second line should be the user text
         assert_eq!(lines[1].spans[0].content, "hello");
+    }
+
+    // ─── Step 4: status bar ctx segment ──────────────────────────────────────
+
+    #[test]
+    fn status_bar_ctx_display_no_limit() {
+        let s = format_ctx_segment(45200, None);
+        assert!(s.contains("ctx: 45.2k"), "got: {s}");
+        assert!(!s.contains('%'), "should not contain % when no limit: {s}");
+    }
+
+    #[test]
+    fn status_bar_ctx_display_with_limit() {
+        let s = format_ctx_segment(45200, Some(200000));
+        assert!(s.contains("ctx: 45.2k/200k (23%)"), "got: {s}");
     }
 }
