@@ -21,7 +21,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 2. [~] **Skill system** — ap discovers and loads "skills" from `~/.ap/skills/` and `./.ap/skills/`. A skill is a markdown file (`SKILL.md`) that gets injected into the system prompt when relevant. Skills can declare tools they need. Compatible with pi/claude AGENTS.md skill conventions. Discovery: semantic search over available skills to auto-inject relevant ones per turn.
 
-3. [ ] **Tool discovery** — `ap` can discover available tools from a project's context (reads `AGENTS.md`, `tools.toml`, skill directories). Presents discovered tools to Claude alongside built-ins.
+3. [~] **Tool discovery** — `ap` can discover available tools from a project's context (reads `AGENTS.md`, `tools.toml`, skill directories). Presents discovered tools to Claude alongside built-ins.
 
 4. [ ] **Richer TUI** — Syntax highlighted code blocks in conversation pane. Tool call details expandable (press `e` on a tool result to expand). Token count + cost display in status bar. Scrollback history preserved across turns. Input: multi-line with `Ctrl+Enter` to submit, `Enter` for newline.
 
