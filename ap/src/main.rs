@@ -174,8 +174,9 @@ async fn run_headless(
             TurnEvent::ToolStart { name, .. } => {
                 eprintln!("ap: tool: {name}");
             }
-            TurnEvent::ToolComplete { .. } => {
-                // Successful results shown in context; errors surfaced via Error event
+            TurnEvent::ToolComplete { .. } | TurnEvent::Usage { .. } => {
+                // ToolComplete: results shown in context; errors surfaced via Error event
+                // Usage: displayed in TUI status bar; headless mode ignores it
             }
             TurnEvent::TurnEnd => {
                 println!(); // final newline

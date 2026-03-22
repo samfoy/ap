@@ -78,9 +78,15 @@ pub enum TurnEvent {
     ToolComplete {
         name: String,
         result: String,
+        is_error: bool,
     },
     /// The full agent turn is finished (no more tool calls pending).
     TurnEnd,
+    /// Token usage reported at the end of a turn.
+    Usage {
+        input_tokens: u32,
+        output_tokens: u32,
+    },
     /// An unrecoverable error occurred.
     Error(String),
 }
@@ -181,13 +187,15 @@ mod tests {
             TurnEvent::ToolComplete {
                 name: "bash".to_string(),
                 result: "file.txt".to_string(),
+                is_error: false,
             },
             TurnEvent::TurnEnd,
+            TurnEvent::Usage { input_tokens: 10, output_tokens: 20 },
             TurnEvent::Error("oops".to_string()),
         ];
 
         let cloned: Vec<TurnEvent> = events.to_vec();
-        assert_eq!(cloned.len(), 5);
+        assert_eq!(cloned.len(), 6);
 
         // Spot-check cloned values
         if let TurnEvent::TextChunk(ref s) = cloned[0] {
@@ -198,6 +206,12 @@ mod tests {
         if let TurnEvent::TurnEnd = cloned[3] {
         } else {
             panic!("expected TurnEnd");
+        }
+        if let TurnEvent::Usage { input_tokens, output_tokens } = cloned[4] {
+            assert_eq!(input_tokens, 10);
+            assert_eq!(output_tokens, 20);
+        } else {
+            panic!("expected Usage");
         }
     }
 
