@@ -17,44 +17,29 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 ## 🟠 Next Up (Priority Order)
 
+> **Bootstrap goal:** ap builds ap. Critical path: Provider abstraction → AGENTS.md → Self-hosting. Everything else is secondary until the loop flips.
+
 1. [~] **Provider abstraction** — Clean Provider trait with easy swap. Add OpenAI-compatible provider (works with any OpenAI API endpoint — OpenRouter, LM Studio, Ollama). Config: `[provider] backend = "openai-compat" base_url = "..." api_key = "..."`. Streaming via SSE. Same tool call format as Bedrock adapter.
 
-2. [~] **Skill system** — ap discovers and loads "skills" from `~/.ap/skills/` and `./.ap/skills/`. A skill is a markdown file (`SKILL.md`) that gets injected into the system prompt when relevant. Skills can declare tools they need. Compatible with pi/claude AGENTS.md skill conventions. Discovery: semantic search over available skills to auto-inject relevant ones per turn.
-
-3. [x] **Tool discovery** — `ap` can discover available tools from a project's context (reads `AGENTS.md`, `tools.toml`, skill directories). Presents discovered tools to Claude alongside built-ins.
-
-4. [~] **Richer TUI** — Syntax highlighted code blocks in conversation pane. Tool call details expandable (press `e` on a tool result to expand). Token count + cost display in status bar. Scrollback history preserved across turns. Input: multi-line with `Ctrl+Enter` to submit, `Enter` for newline.
-
-5. [~] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal:
-    - Markdown: headings, bold/italic, inline code, fenced code blocks with syntax highlighting, bullet lists, numbered lists, blockquotes — rendered via `termimad` or `pulldown-cmark` + custom ratatui renderer
-    - Mermaid diagrams: detect fenced ` ```mermaid ` blocks, render as ASCII art in-terminal using `mermaid-cli` (`mmdc`) if available, or fall back to raw source with a `[diagram]` label
-    - Toggle: `m` key switches between rendered and raw markdown view
-    - Code blocks: language-aware syntax highlighting via `syntect` crate
-
-5. [~] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
-
-6. [ ] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
-
-7. [ ] **AGENTS.md support** — Load and inject agent context from both global and project level, same convention as pi/claude code:
+2. [ ] **AGENTS.md support** — Load and inject agent context from both global and project level, same convention as pi/claude code:
     - **Global:** `~/.ap/AGENTS.md` — always injected, defines persona, coding style, preferences
     - **Project:** `./AGENTS.md` (cwd at startup) — injected after global, overrides/extends it
     - Both are injected into the system prompt at startup, global first then project
     - Hot reload: if `AGENTS.md` changes during a session, pick it up on next turn
     - Config: `[agents] global = "~/.ap/AGENTS.md"` (override path if needed), `project = true` (auto-discover from cwd, default on)
-    - Skills referenced in AGENTS.md (`## Skills` section listing skill names) trigger skill loading from `~/.ap/skills/` or `./.ap/skills/`
-    - Compatible with pi, claude code, and OpenClaw AGENTS.md conventions — same file works across all three
+    - Skills referenced in AGENTS.md trigger skill loading from `~/.ap/skills/` or `./.ap/skills/`
+    - Compatible with pi, claude code, and OpenClaw AGENTS.md conventions
 
-8. [ ] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
+3. [ ] **Self-hosting (ap builds ap)** — Switch the Ralph build loop from pi to ap itself:
+    - Gate: `ap -p "read BACKLOG.md and summarize the next 3 items"` works reliably end-to-end
+    - Update `ralph.yml` cli.backend from `pi` to `ap`
+    - Update `ap-monitor.py` to use `ap --print` instead of `pi --print`
+    - Requires: Provider abstraction + AGENTS.md + stable non-interactive mode
+    - Milestone: ap is the agent driving its own development loop
 
-9. [ ] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
-    - **Background bash tool** — `bash` tool gains `background: true` param. Spawns process detached, returns a `job_id` immediately. Claude can continue the conversation while it runs.
-    - **Jobs panel in TUI** — New right-side panel (or toggleable overlay, `j` key) showing running/completed background jobs: name, pid, status, runtime, last line of output
-    - **Job alerts** — When a background job completes (or errors), a non-blocking notification appears in the TUI status bar. Claude is also notified via a synthetic tool result injected into the next turn: `{"job_id": "...", "exit_code": 0, "stdout_tail": "..."}`
-    - **tmux sub-agents** — Built-in `tmux` awareness: `bash` tool can target a named tmux session/window (`tmux_target: "ap-worker"`) to run long commands visibly. `ap` knows how to create, attach, and read from tmux panes. Sub-agent pattern: spawn `ap --session worker -p "..."` in a tmux window, monitor its session file for completion.
-    - **Job lifecycle:** `job list`, `job attach <id>` (open tmux pane), `job kill <id>`, `job logs <id>` — callable by Claude as tool calls or by user as `/job` commands in TUI input
-    - Config: `[jobs] max_concurrent = 4, tmux_enabled = true, default_shell = "zsh"`
+4. [~] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
 
-10. [ ] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
+5. [ ] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
     - Every `ap` invocation creates a named session immediately — name auto-generated from first user message (short slug, e.g. `refactor-auth-module-2026-03-22`)
     - `--session <name>` to give an explicit name at startup
     - Sessions saved to `~/.ap/sessions/<name>.json` after every turn
@@ -65,49 +50,14 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - TUI: `s` key opens session browser overlay — scrollable list, preview pane, Enter to resume, `f` to fork
     - Remove the `--session` opt-in flag concept entirely — persistence is always on
 
-11. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
-    - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
-    - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
-    - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
-    - Incremental indexing: watch for new sessions + file changes, reindex in background
-    - Config: `[search] enabled = true, dirs = [], session_recall = true, recall_top_k = 3`
-    - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
-    - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
-
-11. [ ] **LSP integration** — Connect to running language servers for code-aware context:
-    - `lsp` built-in tool: `{ "op": "hover" | "definition" | "references" | "diagnostics" | "completion", "file": "...", "line": N, "col": N }`
-    - ap spawns or connects to an existing LSP server (e.g. `rust-analyzer`, `pyright`, `typescript-language-server`) based on project language, detected from cwd
-    - Results injected as tool output — Claude sees type info, diagnostics, go-to-def results as structured text
-    - Diagnostics surface passively: on file write, ap runs `diagnostics` on the saved file and appends errors/warnings as a follow-up tool result
-    - Config: `[lsp] enabled = true, servers = { rust = "rust-analyzer", python = "pyright", typescript = "typescript-language-server" }`
-    - Uses `tower-lsp` client (Rust LSP client crate) or shells out to `lsp-cli` if available
-    - TUI: diagnostics panel (toggleable, `d` key) shows current file errors inline — Built-in vector search, no external service required. Two search surfaces:
-    - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
-    - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
-    - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
-    - Incremental indexing: watch for new sessions + file changes, reindex in background
-    - Config: `[search] enabled = true, dirs = [], session_recall = true, recall_top_k = 3`
-    - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
-    - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
-
-
-2. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
+6. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
     - `/model <id>` command in TUI input switches active model immediately
     - `--model` CLI flag overrides config at startup
     - Model displayed in TUI status bar
     - Works across all providers (Bedrock, OpenAI-compat)
     - Recent models remembered in `~/.ap/models.json` for quick switching
 
-3. [ ] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
-    - Slash command or @mention triggers ap in any channel or DM
-    - Streaming responses posted as editable Slack messages (updated chunk by chunk)
-    - Tool calls shown as threaded replies (collapsible)
-    - Session per Slack thread — conversation history maintained
-    - Config: `[slack] bot_token = "..." app_token = "..." signing_secret = "..."`
-    - Socket Mode for no-ingress-required deployment
-    - Runs as a daemon: `ap slack-bot`
-
-6. [ ] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
+7. [ ] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
 
     **API details** (from pi-provider-kiro reference impl at ~/Projects/pi-provider-kiro):
     - Endpoint: `https://q.us-east-1.amazonaws.com/generateAssistantResponse`
@@ -135,14 +85,8 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - SSE parsing: reuse existing streaming infrastructure, add Kiro-specific event parser
 
     **Reference:** ~/Projects/pi-provider-kiro/src/ — full TypeScript implementation to port from.
-4. [ ] **Self-hosting (ap builds ap)** — Switch the Ralph build loop from pi to ap itself:
-    - Gate: `ap -p "read BACKLOG.md and summarize the next 3 items"` works reliably end-to-end
-    - Update `ralph.yml` cli.backend from `pi` to `ap`
-    - Update `ap-monitor.py` to use `ap --print` instead of `pi --print`
-    - Requires: Provider abstraction + AGENTS.md support + non-interactive mode stability
-    - Milestone: ap is the agent driving its own development loop
 
-5. [ ] **Code review + aggressive refactor pass** — Full codebase review and cleanup:
+8. [ ] **Code review + aggressive refactor pass** — Full codebase review and cleanup:
     - Audit all public APIs for consistency (naming, error types, return conventions)
     - Identify and eliminate any remaining mutable state outside the turn pipeline
     - Dead code removal, unused dependencies pruned from Cargo.toml
@@ -150,6 +94,52 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Review all error handling: replace any remaining panics with proper Results
     - Clippy pedantic pass: fix all warnings, document any intentional allows
     - Write architectural decision records (ADRs) for key design choices in docs/
+
+9. [ ] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
+    - Slash command or @mention triggers ap in any channel or DM
+    - Streaming responses posted as editable Slack messages (updated chunk by chunk)
+    - Tool calls shown as threaded replies (collapsible)
+    - Session per Slack thread — conversation history maintained
+    - Config: `[slack] bot_token = "..." app_token = "..." signing_secret = "..."`
+    - Socket Mode for no-ingress-required deployment
+    - Runs as a daemon: `ap slack-bot`
+
+10. [ ] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
+    - **Background bash tool** — `bash` tool gains `background: true` param. Spawns process detached, returns a `job_id` immediately. Claude can continue the conversation while it runs.
+    - **Jobs panel in TUI** — New right-side panel (or toggleable overlay, `j` key) showing running/completed background jobs: name, pid, status, runtime, last line of output
+    - **Job alerts** — When a background job completes (or errors), a non-blocking notification appears in the TUI status bar. Claude is also notified via a synthetic tool result injected into the next turn: `{"job_id": "...", "exit_code": 0, "stdout_tail": "..."}`
+    - **tmux sub-agents** — Built-in `tmux` awareness: `bash` tool can target a named tmux session/window (`tmux_target: "ap-worker"`) to run long commands visibly. `ap` knows how to create, attach, and read from tmux panes. Sub-agent pattern: spawn `ap --session worker -p "..."` in a tmux window, monitor its session file for completion.
+    - **Job lifecycle:** `job list`, `job attach <id>` (open tmux pane), `job kill <id>`, `job logs <id>` — callable by Claude as tool calls or by user as `/job` commands in TUI input
+    - Config: `[jobs] max_concurrent = 4, tmux_enabled = true, default_shell = "zsh"`
+
+11. [ ] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
+
+12. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
+    - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
+    - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
+    - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
+    - Incremental indexing: watch for new sessions + file changes, reindex in background
+    - Config: `[search] enabled = true, dirs = [], session_recall = true, recall_top_k = 3`
+    - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
+    - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
+
+13. [ ] **LSP integration** — Connect to running language servers for code-aware context:
+    - `lsp` built-in tool: `{ "op": "hover" | "definition" | "references" | "diagnostics" | "completion", "file": "...", "line": N, "col": N }`
+    - ap spawns or connects to an existing LSP server based on project language, detected from cwd
+    - Results injected as tool output
+    - Diagnostics surface passively: on file write, ap runs `diagnostics` on the saved file and appends errors/warnings as a follow-up tool result
+    - Config: `[lsp] enabled = true, servers = { rust = "rust-analyzer", python = "pyright", typescript = "typescript-language-server" }`
+    - TUI: diagnostics panel (toggleable, `d` key) shows current file errors inline
+
+14. [~] **Skill system** — ap discovers and loads "skills" from `~/.ap/skills/` and `./.ap/skills/`. Already merged.
+
+15. [~] **Tool discovery** — Already merged.
+
+16. [~] **Richer TUI** — Already merged.
+
+17. [~] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
+
+18. [ ] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
 ---
 
