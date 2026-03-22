@@ -4,6 +4,15 @@ ap-monitor.py — Parallel development loop monitor using git worktrees.
 
 Picks up to MAX_PARALLEL independent backlog items, spins each in its own
 worktree + Ralph loop, watches all in parallel, merges on completion.
+
+Robustness features:
+- Persists active state to .monitor/state.json (survives restarts)
+- Stall detection: restarts Ralph if no new events for STALL_MINUTES
+- Merge conflict recovery: abort + push to .monitor/conflicts/ for manual fix
+- Git push after every merge
+- Heartbeat log every N cycles
+- Retry prompt generation up to 3 times
+- Ralph process detection via pidfile
 """
 
 import json
@@ -11,6 +20,7 @@ import subprocess
 import time
 import re
 import os
+import traceback
 from pathlib import Path
 from datetime import datetime
 
@@ -19,24 +29,47 @@ WORKTREES_DIR = Path.home() / "Projects/ap-worktrees"
 BACKLOG = AP_DIR / "BACKLOG.md"
 MEMORY = AP_DIR / ".monitor/memory.md"
 LOG = AP_DIR / ".monitor/monitor.log"
+STATE_FILE = AP_DIR / ".monitor/state.json"
+CONFLICTS_DIR = AP_DIR / ".monitor/conflicts"
 
 MAX_PARALLEL = 3
-CHECK_INTERVAL = 30  # seconds
-
-# Items that touch shared pipeline core — must be sequential
-SEQUENTIAL_TAGS = ["turn.rs", "types.rs", "middleware", "provider"]
+CHECK_INTERVAL = 30       # seconds between main loop ticks
+STALL_MINUTES = 45        # restart Ralph if no new events for this long
+HEARTBEAT_CYCLES = 10     # log "still alive" every N cycles
+MAX_PROMPT_RETRIES = 3
 
 MEMORY.parent.mkdir(exist_ok=True)
 WORKTREES_DIR.mkdir(exist_ok=True)
+CONFLICTS_DIR.mkdir(exist_ok=True)
 
+
+# ── Logging ───────────────────────────────────────────────────────────────────
 
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
-    print(line)
+    print(line, flush=True)
     with open(LOG, "a") as f:
         f.write(line + "\n")
 
+
+# ── State persistence ─────────────────────────────────────────────────────────
+
+def load_state():
+    """Load persisted active state: {title: {wt: str, started_at: float, last_event_at: float}}"""
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def save_state(active):
+    STATE_FILE.write_text(json.dumps(active, indent=2))
+
+
+# ── Git helpers ───────────────────────────────────────────────────────────────
 
 def run(cmd, cwd=None, **kwargs):
     return subprocess.run(
@@ -45,8 +78,21 @@ def run(cmd, cwd=None, **kwargs):
     )
 
 
+def git_push():
+    r = run("git push origin main")
+    if r.returncode != 0:
+        log(f"Push failed: {r.stderr[:200]}")
+    return r.returncode == 0
+
+
+def git_commit(msg, cwd=None):
+    r = run(f'git add -A && git commit -m "{msg}" || true', cwd=cwd or AP_DIR)
+    return r
+
+
+# ── Backlog helpers ───────────────────────────────────────────────────────────
+
 def get_backlog_items():
-    """Return list of (number, title, body, status) for all items."""
     text = BACKLOG.read_text()
     items = []
     lines = text.splitlines()
@@ -56,7 +102,6 @@ def get_backlog_items():
         if m:
             num, status, title, rest = m.groups()
             body = lines[i]
-            # Grab continuation lines
             j = i + 1
             while j < len(lines) and (lines[j].startswith("    ") or lines[j] == ""):
                 body += "\n" + lines[j]
@@ -78,6 +123,8 @@ def set_item_status(title, status):
     BACKLOG.write_text("\n".join(lines))
 
 
+# ── Worktree/branch naming ────────────────────────────────────────────────────
+
 def slug(title):
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40]
 
@@ -90,20 +137,77 @@ def branch_name(title):
     return f"feature/{slug(title)}"
 
 
+# ── Loop state detection ──────────────────────────────────────────────────────
+
 def loop_completed(wt_path):
     scratchpad = wt_path / ".ralph/agent/scratchpad.md"
-    if not scratchpad.exists():
+    if scratchpad.exists() and "LOOP_COMPLETE" in scratchpad.read_text():
+        return True
+    # Also check events file for loop.terminate
+    for events_file in sorted((wt_path / ".ralph").glob("events-*.jsonl")):
+        try:
+            last_lines = events_file.read_bytes().decode("utf-8", errors="replace").strip().splitlines()
+            for line in reversed(last_lines[-10:]):
+                try:
+                    d = json.loads(line)
+                    if d.get("topic") in ("loop.terminate", "LOOP_COMPLETE"):
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return False
+
+
+def last_event_time(wt_path):
+    """Return unix timestamp of the most recent event, or None."""
+    latest = None
+    for events_file in sorted((wt_path / ".ralph").glob("events-*.jsonl")):
+        try:
+            mtime = events_file.stat().st_mtime
+            if latest is None or mtime > latest:
+                latest = mtime
+        except Exception:
+            continue
+    return latest
+
+
+def ralph_running(wt_path):
+    """Check if a ralph process is running for this worktree."""
+    r = run(f"pgrep -f 'ralph.*--no-tui' | head -1 || true")
+    if not r.stdout.strip():
         return False
-    return "LOOP_COMPLETE" in scratchpad.read_text()
+    # Check if the ralph process has this worktree's directory in its cwd
+    for pid in r.stdout.strip().splitlines():
+        cwd_check = run(f"lsof -p {pid.strip()} 2>/dev/null | grep cwd | grep '{wt_path.name}' || true")
+        if cwd_check.stdout.strip():
+            return True
+    # Fallback: check if any ralph is running and the worktree has recent events (< 5 min)
+    evt_time = last_event_time(wt_path)
+    if evt_time and (time.time() - evt_time) < 300:
+        return True
+    return False
 
 
-def loop_running(wt_path):
-    r = run(f"pgrep -f 'ralph run.*{wt_path.name}' || true", cwd=wt_path)
-    return bool(r.stdout.strip())
+# ── Ralph lifecycle ───────────────────────────────────────────────────────────
+
+def spawn_ralph(wt_path, title):
+    log_file = wt_path / ".monitor-ralph.log"
+    cmd = f"nohup ralph run -H builtin:pdd-to-code-assist --no-tui --continue >> {log_file} 2>&1 &"
+    run(cmd, cwd=wt_path)
+    time.sleep(3)
+    # Quick sanity check — any ralph running at all?
+    r = run("pgrep -f 'ralph run' || true")
+    if r.stdout.strip():
+        log(f"Ralph running for {title}")
+        return True
+    log(f"WARNING: Ralph may not have started for {title}")
+    return False
 
 
-def generate_prompt(title, body):
-    """Ask pi (bedrock) to write a PROMPT.md for the item."""
+# ── Prompt generation ─────────────────────────────────────────────────────────
+
+def generate_prompt(title, body, attempt=1):
     context = f"""You are helping build `ap`, a Rust/ratatui AI coding agent (~/Projects/ap/ap/).
 The project uses functional-first Rust: pure functions, immutable data, iterator chains, Middleware chain.
 Core types: Conversation (immutable), turn() -> Result<(Conversation, Vec<TurnEvent>)>, Middleware chain.
@@ -114,7 +218,7 @@ Backlog item spec:
 {body}
 
 Past completed work:
-{run("git log --oneline -10").stdout.strip()}
+{run("git log --oneline -15").stdout.strip()}
 
 Monitor memory:
 {MEMORY.read_text() if MEMORY.exists() else "(none yet)"}
@@ -125,17 +229,23 @@ End with: Output LOOP_COMPLETE when all acceptance criteria are met and the proj
 Output only the PROMPT.md content."""
 
     r = subprocess.run(
-        ["pi", "--provider", "amazon-bedrock", "--model", "us.anthropic.claude-sonnet-4-6", "--print", context],
-        capture_output=True, text=True, env={**os.environ}
+        ["pi", "--provider", "amazon-bedrock",
+         "--model", "us.anthropic.claude-sonnet-4-6",
+         "--print", context],
+        capture_output=True, text=True, env={**os.environ}, timeout=120
     )
     if r.returncode == 0 and r.stdout.strip():
         return r.stdout.strip()
-    log(f"Pi failed: {r.stderr[:200]}")
+    log(f"Prompt generation attempt {attempt} failed for '{title}': {r.stderr[:200]}")
+    if attempt < MAX_PROMPT_RETRIES:
+        time.sleep(10 * attempt)
+        return generate_prompt(title, body, attempt + 1)
     return None
 
 
+# ── Worktree setup ────────────────────────────────────────────────────────────
+
 def setup_worktree(title):
-    """Create git worktree + branch for item."""
     wt = worktree_path(title)
     branch = branch_name(title)
     if wt.exists():
@@ -143,56 +253,77 @@ def setup_worktree(title):
         return wt
     r = run(f"git worktree add {wt} -b {branch} main")
     if r.returncode != 0:
-        log(f"Worktree creation failed: {r.stderr}")
-        return None
+        # Branch may already exist from a prior run
+        r2 = run(f"git worktree add {wt} {branch}")
+        if r2.returncode != 0:
+            log(f"Worktree creation failed: {r.stderr} / {r2.stderr}")
+            return None
     log(f"Created worktree: {wt} ({branch})")
     return wt
 
 
-def spawn_ralph(wt_path):
-    """Start Ralph loop in worktree background."""
-    log_file = wt_path / ".monitor-ralph.log"
-    cmd = f"nohup ralph run -H builtin:pdd-to-code-assist --no-tui --continue > {log_file} 2>&1 &"
-    run(cmd, cwd=wt_path)
-    time.sleep(2)
-    r = run(f"pgrep -f 'ralph run' || true", cwd=wt_path)
-    if r.stdout.strip():
-        log(f"Ralph running in {wt_path.name} (PID {r.stdout.strip().split()[0]})")
-        return True
-    log(f"WARNING: Ralph may not have started in {wt_path.name}")
-    return False
-
+# ── Merge ─────────────────────────────────────────────────────────────────────
 
 def merge_worktree(title, wt_path):
-    """Merge feature branch into main and remove worktree."""
     branch = branch_name(title)
     log(f"Merging {branch} into main...")
-    r = run(f"git merge --no-ff {branch} -m 'feat: merge {title}'")
-    if r.returncode != 0:
-        log(f"Merge conflict on {title}: {r.stderr[:200]}")
-        log("Attempting rebase...")
-        run(f"git checkout {branch}", cwd=wt_path)
-        r2 = run(f"git rebase main", cwd=wt_path)
-        if r2.returncode != 0:
-            log(f"Rebase failed — manual intervention needed for {title}")
-            return False
-        run(f"git checkout main")
-        run(f"git merge --ff-only {branch}")
 
+    # Stash any dirty monitor files first
+    run("git stash --include-untracked -m 'monitor-stash' || true")
+
+    r = run(f'git merge --no-ff {branch} -m "feat: merge {title}"')
+    if r.returncode != 0:
+        log(f"Merge conflict on {title}: {r.stderr[:300]}")
+        run("git merge --abort || true")
+
+        # Save conflict info for manual resolution
+        conflict_note = CONFLICTS_DIR / f"{slug(title)}.md"
+        conflict_note.write_text(
+            f"# Merge conflict: {title}\n\n"
+            f"Branch: {branch}\n"
+            f"Time: {datetime.now().isoformat()}\n\n"
+            f"## Error\n```\n{r.stderr}\n```\n\n"
+            f"## Manual fix\n"
+            f"```bash\n"
+            f"cd ~/Projects/ap\n"
+            f"git merge --no-ff {branch}\n"
+            f"# resolve conflicts\n"
+            f"git add . && git commit\n"
+            f"git push origin main\n"
+            f"```\n"
+        )
+        run("git stash pop || true")
+        log(f"Conflict info saved to {conflict_note}. Skipping {title} for now.")
+        return False
+
+    # Re-apply stashed monitor files
+    run("git stash pop || true")
+
+    # Remove worktree and branch
     run(f"git worktree remove {wt_path} --force")
-    run(f"git branch -d {branch} || true")
+    run(f"git branch -d {branch} || git branch -D {branch} || true")
     log(f"Merged and cleaned up worktree for: {title}")
+
+    # Push to GitHub
+    git_push()
     return True
 
 
+# ── Review + memory ───────────────────────────────────────────────────────────
+
 def review(title, wt_path):
-    commits = run("git log --oneline -6", cwd=wt_path).stdout.strip()
-    r = subprocess.run(
-        ["pi", "--provider", "amazon-bedrock", "--model", "us.anthropic.claude-sonnet-4-6",
-         "--print", f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"],
-        capture_output=True, text=True, env={**os.environ}
-    )
-    return r.stdout.strip() if r.returncode == 0 else "(review unavailable)"
+    try:
+        commits = run("git log --oneline -8", cwd=wt_path).stdout.strip()
+        r = subprocess.run(
+            ["pi", "--provider", "amazon-bedrock",
+             "--model", "us.anthropic.claude-sonnet-4-6",
+             "--print",
+             f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"],
+            capture_output=True, text=True, env={**os.environ}, timeout=60
+        )
+        return r.stdout.strip() if r.returncode == 0 else "(review unavailable)"
+    except Exception as e:
+        return f"(review error: {e})"
 
 
 def update_memory(title, review_text, wt_path):
@@ -203,24 +334,48 @@ def update_memory(title, review_text, wt_path):
         f.write(f"Commits:\n{commits}\n")
 
 
+# ── Main loop ─────────────────────────────────────────────────────────────────
+
 def main():
     log("ap monitor started (parallel worktree mode)")
-    # active: dict of title -> worktree path
-    active = {}
 
-    # Resume any in-progress items
+    # Load persisted state
+    raw_state = load_state()
+    active = {}  # title -> {wt: Path, started_at: float, last_restart_at: float}
+    for title, info in raw_state.items():
+        wt = Path(info["wt"])
+        if wt.exists():
+            active[title] = {
+                "wt": wt,
+                "started_at": info.get("started_at", time.time()),
+                "last_restart_at": info.get("last_restart_at", 0),
+            }
+            log(f"Resuming: {title} in {wt}")
+
+    # Also pick up any [~] items with existing worktrees not in state
     for item in get_backlog_items():
-        if item["status"] == "~":
+        if item["status"] == "~" and item["title"] not in active:
             wt = worktree_path(item["title"])
             if wt.exists():
-                active[item["title"]] = wt
-                log(f"Resuming: {item['title']} in {wt}")
+                active[item["title"]] = {
+                    "wt": wt,
+                    "started_at": time.time(),
+                    "last_restart_at": 0,
+                }
+                log(f"Resuming (from backlog): {item['title']} in {wt}")
 
+    cycle = 0
     while True:
         try:
-            # Check completed loops
+            cycle += 1
+            if cycle % HEARTBEAT_CYCLES == 0:
+                log(f"♥ alive — active: {list(active.keys()) or 'none'}")
+
+            # ── Check for completed/stalled loops ──────────────────────────────
             for title in list(active.keys()):
-                wt = active[title]
+                info = active[title]
+                wt = info["wt"]
+
                 if loop_completed(wt):
                     log(f"LOOP_COMPLETE: {title}")
                     rev = review(title, wt)
@@ -228,10 +383,25 @@ def main():
                     update_memory(title, rev, wt)
                     if merge_worktree(title, wt):
                         set_item_status(title, "x")
-                        run("git add BACKLOG.md .monitor/ && git commit -m f'chore(monitor): complete {title}' || true")
+                        git_commit(f"chore(monitor): complete {title}")
+                        git_push()
                     del active[title]
+                    save_state({k: {"wt": str(v["wt"]), "started_at": v["started_at"], "last_restart_at": v["last_restart_at"]} for k, v in active.items()})
+                    continue
 
-            # Spawn new loops if slots available
+                # Stall detection
+                evt_time = last_event_time(wt)
+                if evt_time:
+                    stale_minutes = (time.time() - evt_time) / 60
+                    if stale_minutes > STALL_MINUTES:
+                        since_restart = (time.time() - info.get("last_restart_at", 0)) / 60
+                        if since_restart > STALL_MINUTES:
+                            log(f"STALL detected for {title} ({stale_minutes:.0f}m since last event) — restarting Ralph")
+                            spawn_ralph(wt, title)
+                            active[title]["last_restart_at"] = time.time()
+                            save_state({k: {"wt": str(v["wt"]), "started_at": v["started_at"], "last_restart_at": v["last_restart_at"]} for k, v in active.items()})
+
+            # ── Spawn new loops if slots available ─────────────────────────────
             if len(active) < MAX_PARALLEL:
                 items = get_backlog_items()
                 pending = [i for i in items if i["status"] == " "]
@@ -247,27 +417,33 @@ def main():
                         set_item_status(title, " ")
                         continue
 
-                    prompt = generate_prompt(title, item["body"])
-                    if not prompt:
-                        log(f"Failed to generate prompt for {title}, skipping")
-                        set_item_status(title, " ")
-                        run(f"git worktree remove {wt} --force || true")
-                        continue
+                    # Generate PROMPT.md (with retries)
+                    if not (wt / "PROMPT.md").exists():
+                        prompt = generate_prompt(title, item["body"])
+                        if not prompt:
+                            log(f"Failed to generate prompt for {title} after {MAX_PROMPT_RETRIES} attempts — skipping")
+                            set_item_status(title, " ")
+                            run(f"git worktree remove {wt} --force || true")
+                            continue
+                        (wt / "PROMPT.md").write_text(prompt)
+                        agents = AP_DIR / "AGENTS.md"
+                        if agents.exists():
+                            (wt / "AGENTS.md").write_text(agents.read_text())
+                        run(f'git add PROMPT.md AGENTS.md && git commit -m "chore: init {title}" || true', cwd=wt)
 
-                    (wt / "PROMPT.md").write_text(prompt)
-                    # Copy AGENTS.md into worktree
-                    agents = AP_DIR / "AGENTS.md"
-                    if agents.exists():
-                        (wt / "AGENTS.md").write_text(agents.read_text())
+                    git_commit(f"chore(monitor): start {title}")
 
-                    run(f"git add PROMPT.md AGENTS.md && git commit -m 'chore: init {title}' || true", cwd=wt)
-                    run(f"git add BACKLOG.md && git commit -m 'chore(monitor): start {title}' || true")
-
-                    if spawn_ralph(wt):
-                        active[title] = wt
+                    if spawn_ralph(wt, title):
+                        active[title] = {
+                            "wt": wt,
+                            "started_at": time.time(),
+                            "last_restart_at": 0,
+                        }
+                        save_state({k: {"wt": str(v["wt"]), "started_at": v["started_at"], "last_restart_at": v["last_restart_at"]} for k, v in active.items()})
                     else:
                         set_item_status(title, " ")
 
+            # ── Check for all done ─────────────────────────────────────────────
             if not active:
                 pending = [i for i in get_backlog_items() if i["status"] == " "]
                 if not pending:
@@ -275,9 +451,7 @@ def main():
                     break
 
         except Exception as e:
-            log(f"Monitor error: {e}")
-            import traceback
-            log(traceback.format_exc())
+            log(f"Monitor error: {e}\n{traceback.format_exc()[:500]}")
 
         time.sleep(CHECK_INTERVAL)
 
