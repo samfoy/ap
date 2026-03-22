@@ -377,3 +377,18 @@ Implemented `ap/src/hooks/mod.rs` and `ap/src/hooks/runner.rs`:
 - `HookRunner::run_observer_hook`: non-cancellable; uses NamedTempFile for AP_MESSAGES_FILE payload
 - 6 unit tests, all pass; 46 total tests pass; zero warnings
 - Committed: 8245fab
+
+## 2026-03-22 — Task 06: Extensions System Complete
+
+Implemented `ap/src/extensions/` with full Rhai + dylib support:
+- `mod.rs`: Extension trait, Panel/MessageInterceptor stubs, HookRegistration/HookLifecycle enums, Registry with all 4 surfaces
+- `rhai_loader.rs`: RhaiTool wraps .rhai scripts as Box<dyn Tool>. Engine::new() with sync feature. Validates name/description/schema/execute at load time. JSON<->Dynamic conversion. 5 unit tests (load valid, execute, syntax error, missing execute, missing name).
+- `dylib_loader.rs`: ExtensionLoader stores Library handles in Vec<Library> to prevent dlclose UAF. OsStr-safe extension matching via .and_then(|e| e.to_str()). load_dylib returns Library to caller. discover_and_load scans ~/.ap/extensions/ + ./.ap/extensions/. 3 unit tests.
+
+Key compile fixes:
+- iter_fn_def is private (gated on internals feature) → use iter_functions() instead
+- try_cast returns Option, not Result
+- RhaiTool doesn't impl Debug → use match instead of unwrap_err() in test
+
+Results: 56 tests pass, zero warnings, cargo build --release clean.
+Committed: 550316f
