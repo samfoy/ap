@@ -185,9 +185,7 @@ Output only the PROMPT.md content."""
 
     r = subprocess.run(
         [AP_DIR / "ap" / "target" / "release" / "ap",
-         "--provider", "amazon-bedrock",
-         "--model", "us.anthropic.claude-sonnet-4-6",
-         "--print", context],
+         "--prompt", context],
         capture_output=True, text=True, env={**os.environ}, timeout=300
     )
     if r.returncode == 0 and r.stdout.strip():
@@ -206,9 +204,7 @@ def review(title):
         commits = run("git log --oneline -8").stdout.strip()
         r = subprocess.run(
             [AP_DIR / "ap" / "target" / "release" / "ap",
-             "--provider", "amazon-bedrock",
-             "--model", "us.anthropic.claude-sonnet-4-6",
-             "--print",
+             "--prompt",
              f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"],
             capture_output=True, text=True, env={**os.environ}, timeout=60
         )
