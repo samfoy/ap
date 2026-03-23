@@ -621,3 +621,5 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 [21:26:11] ap monitor started (direct-on-main mode)
 [21:26:11] Starting: TUI overhaul — simple Claude Code / pi style UI
 [21:26:11] Starting: TUI overhaul — simple Claude Code / pi style UI
+[21:28:32] WARNING: Ralph may not have started for TUI overhaul — simple Claude Code / pi style UI
+[21:28:32] WARNING: Ralph may not have started for TUI overhaul — simple Claude Code / pi style UI
