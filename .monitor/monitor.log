@@ -581,3 +581,5 @@ The `init` commit only tickmarks the backlog item to `[~]` (in-progress), adds a
 [21:07:55] Review: **Did not land cleanly — it's an `init` commit with no corresponding `monitor: complete`.**
 
 The `init` commit only tickmarks the backlog item to `[~]` (in-progress), adds a stray `PROMPT.md` placeholder, and logs the start time — zero `src/` changes. Every prior feature in this log follows the `init → monitor: complete` pair pattern, but `Pi/Agent Skills compatibility` has only its `init`; the implementation (subdirectory skill discovery, frontmatter upgrades, `/skill:<name>` commands, progressive-disclosure injection, etc.) was never written or merged. The gap is the entire feature.
+[21:07:56] Starting: Prompt templates
+[21:07:56] Starting: Prompt templates
