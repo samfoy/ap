@@ -170,7 +170,27 @@ def ralph_running():
     return bool(r.stdout.strip())
 
 
+def check_aws_credentials(max_retries=3, retry_delay=10):
+    """Warm up AWS credentials, retrying if stale. Returns True if ready."""
+    for attempt in range(1, max_retries + 1):
+        r = run(f"{AP_DIR}/ap/target/release/ap --prompt 'ping' 2>&1 | head -1")
+        output = (r.stdout + r.stderr).strip()
+        if "AWS error" in output or "service error" in output or "ExpiredToken" in output:
+            log(f"AWS credentials stale (attempt {attempt}/{max_retries}) — waiting {retry_delay}s")
+            # Touch the profile to trigger SSO refresh
+            run("aws sts get-caller-identity --profile openclaw-bedrock")
+            time.sleep(retry_delay)
+        else:
+            log("AWS credentials OK")
+            return True
+    log("WARNING: AWS credentials still stale after retries — proceeding anyway")
+    return False
+
+
 def spawn_ralph(title):
+    # Warm up AWS credentials before spawning
+    check_aws_credentials()
+
     # Clear stale ralph state from prior loop
     stale = AP_DIR / ".ralph"
     if stale.exists():
@@ -252,6 +272,7 @@ def update_memory(title, review_text):
 
 def main():
     log("ap monitor started (direct-on-main mode)")
+    check_aws_credentials()
 
     current_title = None
     current_started_at = None
