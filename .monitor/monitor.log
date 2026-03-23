@@ -934,3 +934,9 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 [07:58:38] ♥ alive — active: ['Model switching']
 [08:03:38] ♥ alive — active: ['Model switching']
 [08:06:08] LOOP_COMPLETE: Model switching
+[08:06:40] Review: Now I have a very clear picture. Let me summarize:
+
+**It did not land cleanly — the feature is scaffolded but not implemented.** The four commits for Model switching (`cf41bcc` init, `b6cabb3` prompt cleanup, `c73c825` monitor fix, `cc2e06c` monitor fix) contain only monitor/infra churn and an updated `PROMPT.md` spec; zero source code in `ap/src/` changed across the entire range. The core deliverables — `RecentModels`, `Action::ModelSwitch`, `/model <id>` slash-command parsing in `events.rs`, provider hot-swap in `tui/mod.rs`, and the status-bar model display update — are completely absent from the codebase.
+
+The gap is total on the Rust side: `BACKLOG.md` marks the item as `[~]` (in-progress), the `PROMPT.md` has a detailed spec, but the three monitor fixes that followed `cf41bcc` were all fighting infra problems (stale lock, preamble in prompt output, wrong baseline for change detection) rather than delivering feature code, and the agentic loop apparently never produced a commit touching `src/`.
+[08:06:40] ⚠️  No src/ changes detected for Model switching — marking failed, requeueing

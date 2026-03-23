@@ -496,3 +496,17 @@ d67c332 chore: clean PROMPT.md for Session management UX
 006a46e chore(monitor): requeue Session management UX (no src changes)
 b0c07d2 chore: init Session management UX
 ebfc73f chore(monitor): complete TUI overhaul — simple Claude Code / pi style UI
+
+## 2026-03-23 08:06 — Model switching
+Review: Now I have a very clear picture. Let me summarize:
+
+**It did not land cleanly — the feature is scaffolded but not implemented.** The four commits for Model switching (`cf41bcc` init, `b6cabb3` prompt cleanup, `c73c825` monitor fix, `cc2e06c` monitor fix) contain only monitor/infra churn and an updated `PROMPT.md` spec; zero source code in `ap/src/` changed across the entire range. The core deliverables — `RecentModels`, `Action::ModelSwitch`, `/model <id>` slash-command parsing in `events.rs`, provider hot-swap in `tui/mod.rs`, and the status-bar model display update — are completely absent from the codebase.
+
+The gap is total on the Rust side: `BACKLOG.md` marks the item as `[~]` (in-progress), the `PROMPT.md` has a detailed spec, but the three monitor fixes that followed `cf41bcc` were all fighting infra problems (stale lock, preamble in prompt output, wrong baseline for change detection) rather than delivering feature code, and the agentic loop apparently never produced a commit touching `src/`.
+Commits:
+58772f8 chore: auto-commit before merge (loop primary)
+cc2e06c fix(monitor): use init commit as baseline for src/ change check, not HEAD~1
+c73c825 fix(monitor): clear stale loop.lock on spawn_ralph to prevent exclusive lock blocking
+b6cabb3 fix(monitor): strip preamble from generate_prompt output; clean PROMPT.md for Model switching
+cf41bcc chore: init Model switching
+0e2e9aa chore(monitor): complete Session management UX
