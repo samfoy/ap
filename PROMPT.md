@@ -1,1 +1,0 @@
-Now I have a thorough understanding of the codebase. Let me write the PROMPT.md for the Markdown + Mermaid rendering feature.

@@ -374,3 +374,15 @@ d7e8b1e chore(monitor): complete Semantic search over sessions + directories
 2b35afa chore(monitor): complete Streaming improvements
 fec2e57 chore: init Streaming improvements
 c300ddf chore(monitor): complete Background process management + tmux sub-agents
+
+## 2026-03-22 20:53 — Markdown + Mermaid rendering
+Review: **No, it did not land — it's a phantom init, identical to the prior pattern.** `bfd88d1` only flips the BACKLOG item from `[ ]` to `[~]`, appends two log lines, and drops a broken one-liner `PROMPT.md` stub (`"Now I have a thorough understanding of the codebase. Let me write the PROMPT.md:"`) that was never completed. Zero Rust source files were touched — no markdown parser integration, no Mermaid renderer, no TUI rendering changes whatsoever.
+
+The gap is the entire feature: there is no `chore(monitor): complete` counterpart commit in the log for this work, which means the monitor loop stalled after `init` and never spawned or completed a sub-agent execution. The `PROMPT.md` stub being a truncated sentence is the tell — the monitor wrote an incomplete thought and committed it as if it were a real spec.
+Commits:
+bfd88d1 chore: init Markdown + Mermaid rendering
+a3e43a5 chore(monitor): complete LSP integration
+aa4ee20 chore: init LSP integration
+d7e8b1e chore(monitor): complete Semantic search over sessions + directories
+1d235c6 chore: init Semantic search over sessions + directories
+2b35afa chore(monitor): complete Streaming improvements
