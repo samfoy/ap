@@ -192,7 +192,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
     **Reference:** pi skill spec at `~/Projects/pi-knowledge-search/node_modules/@mariozechner/pi-coding-agent/docs/skills.md`
 
-22. [x] **Project-level config** — Per-project `ap.toml` that overlays global config:
+22. [ ] **Project-level config** — Per-project `ap.toml` that overlays global config:
     - Locations: `~/.ap/config.toml` (global) and `.ap/config.toml` (project, cwd + ancestors up to git root)
     - Project config discovered automatically at startup; applied after global
     - Deep merge for nested tables (e.g. `[context]`, `[skills]`), scalar values override
@@ -201,7 +201,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - `--no-project-config` flag to skip project discovery
     - Reference: pi's global `~/.pi/agent/settings.json` + project `.pi/settings.json` pattern
 
-23. [x] **Prompt templates** — Expandable markdown snippets invoked as `/name` commands:
+23. [ ] **Prompt templates** — Expandable markdown snippets invoked as `/name` commands:
     - Locations: `~/.ap/prompts/*.md` (global), `.ap/prompts/*.md` (project)
     - Filename without `.md` becomes the command name (`review.md` → `/review`)
     - Frontmatter: optional `description` field; falls back to first non-empty line
@@ -212,7 +212,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - `--no-prompt-templates` to disable discovery
     - Reference: pi prompt templates at `~/Projects/pi-knowledge-search/node_modules/@mariozechner/pi-coding-agent/docs/prompt-templates.md`
 
-24. [x] **Retry with exponential backoff** — Automatic retry on transient provider errors:
+24. [ ] **Retry with exponential backoff** — Automatic retry on transient provider errors:
     - Retry on: HTTP 429 (rate limit), 5xx server errors, network timeouts, SSE stream drops
     - Exponential backoff: base 2s, doubling each attempt (2s → 4s → 8s → ...)
     - Configurable: `[retry] enabled = true`, `max_retries = 3`, `base_delay_ms = 2000`, `max_delay_ms = 60000`
