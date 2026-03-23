@@ -474,3 +474,15 @@ f9d808f fix(monitor): use zsh -il for login+interactive shell (loads .zshrc, get
 9ddc052 fix(monitor): don't requeue on slow ralph startup, bump spawn wait to 10s
 b8fcc57 chore: init TUI overhaul — simple Claude Code / pi style UI
 a615d33 chore: init TUI overhaul — simple Claude Code / pi style UI
+
+## 2026-03-22 23:02 — Session management UX
+Review: The log and code tell a clear story. **The TUI overhaul that was the pre-requisite work landed solidly** — `ebfc73f` delivered the 3-zone renderer, the zsh login-shell fix, and the spawn-wait bump, all of which were real blocking issues that got resolved mid-stream. The iteration noise (`a615d33 → b8fcc57 → 3961753 → ebfc73f`) is just the agent self-correcting across retries, which is normal for this loop.
+
+**The session management goal itself did not land.** The BACKLOG item is honestly marked `[~]` (in-progress), and the code confirms it: persistence is still opt-in behind `--session <name>`, auto-naming from the first message slug is absent, `ap sessions` list/resume/fork subcommands don't exist, the TUI `s`-key session browser was never built, and `run_tui` still ignores the session it receives (the arg is `_session`). The init commit (`b0c07d2`) only touched the log, BACKLOG, and a stub `PROMPT.md` — the actual feature work never started before the branch ended.
+Commits:
+b0c07d2 chore: init Session management UX
+ebfc73f chore(monitor): complete TUI overhaul — simple Claude Code / pi style UI
+d25759f fix(ralph): use custom backend pointing to ap binary directly
+f9d808f fix(monitor): use zsh -il for login+interactive shell (loads .zshrc, gets CLAUDE_CODE_USE_BEDROCK)
+3961753 chore: init TUI overhaul — manual PROMPT.md
+9ddc052 fix(monitor): don't requeue on slow ralph startup, bump spawn wait to 10s

@@ -691,3 +691,15 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 **One gap worth noting:** `AppMode` (the old `Normal`/`Insert` enum) is still defined in `mod.rs` and `TuiApp` still carries a `mode` field — they're just dead code now. The PROMPT called for removing them outright; they were left as a stub. Not a functional problem, but it means the old modal scaffolding is still in the struct and will generate dead-code lint noise until cleaned up.
 [22:58:06] Starting: Session management UX
 [22:58:06] Starting: Session management UX
+[23:01:01] Ralph running for Session management UX
+[23:01:01] Ralph running for Session management UX
+[23:01:31] LOOP_COMPLETE: Session management UX
+[23:01:31] LOOP_COMPLETE: Session management UX
+[23:02:03] Review: The log and code tell a clear story. **The TUI overhaul that was the pre-requisite work landed solidly** — `ebfc73f` delivered the 3-zone renderer, the zsh login-shell fix, and the spawn-wait bump, all of which were real blocking issues that got resolved mid-stream. The iteration noise (`a615d33 → b8fcc57 → 3961753 → ebfc73f`) is just the agent self-correcting across retries, which is normal for this loop.
+
+**The session management goal itself did not land.** The BACKLOG item is honestly marked `[~]` (in-progress), and the code confirms it: persistence is still opt-in behind `--session <name>`, auto-naming from the first message slug is absent, `ap sessions` list/resume/fork subcommands don't exist, the TUI `s`-key session browser was never built, and `run_tui` still ignores the session it receives (the arg is `_session`). The init commit (`b0c07d2`) only touched the log, BACKLOG, and a stub `PROMPT.md` — the actual feature work never started before the branch ended.
+[23:02:03] Review: The log and code tell a clear story. **The TUI overhaul that was the pre-requisite work landed solidly** — `ebfc73f` delivered the 3-zone renderer, the zsh login-shell fix, and the spawn-wait bump, all of which were real blocking issues that got resolved mid-stream. The iteration noise (`a615d33 → b8fcc57 → 3961753 → ebfc73f`) is just the agent self-correcting across retries, which is normal for this loop.
+
+**The session management goal itself did not land.** The BACKLOG item is honestly marked `[~]` (in-progress), and the code confirms it: persistence is still opt-in behind `--session <name>`, auto-naming from the first message slug is absent, `ap sessions` list/resume/fork subcommands don't exist, the TUI `s`-key session browser was never built, and `run_tui` still ignores the session it receives (the arg is `_session`). The init commit (`b0c07d2`) only touched the log, BACKLOG, and a stub `PROMPT.md` — the actual feature work never started before the branch ended.
+[23:02:03] ⚠️  No src/ changes detected for Session management UX — marking failed, requeueing
+[23:02:03] ⚠️  No src/ changes detected for Session management UX — marking failed, requeueing
