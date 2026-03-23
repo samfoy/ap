@@ -280,3 +280,5 @@ The gap is straightforward: the goal and the log are mismatched. What landed her
 **Gap:** The goal is entirely unstarted from a code perspective. PROMPT.md is the spec for the next loop to execute, not evidence of completion.
 [17:13:14] Merging feature/amazon-toolchain-integration into main...
 [17:13:14] Merged and cleaned up worktree for: Amazon toolchain integration
+[17:13:16] Starting: Pi/Agent Skills compatibility
+[17:13:17] Created worktree: /Users/sam.painter/Projects/ap-worktrees/pi-agent-skills-compatibility (feature/pi-agent-skills-compatibility)
