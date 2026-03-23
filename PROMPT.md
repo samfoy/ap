@@ -1,21 +1,41 @@
-Now I have a thorough understanding of the codebase. Let me write the PROMPT.md:Here is the `PROMPT.md` content written to `/Users/sam.painter/Projects/ap/ap/PROMPT.md`:
+# PROMPT.md — Session Management UX
 
----
+## Vision
 
-The prompt is structured around **7 independently-compilable steps**, each building on the last:
+All `ap` sessions are named and persisted to disk from the first turn. No ephemeral runs. When you start `ap`, it creates a named session automatically. When you run `ap --prompt "..."` non-interactively, it also saves to `~/.ap/sessions/`. The user can resume a previous session with `ap --session <name>` or `ap -s <name>`.
 
-| Step | What it adds |
-|------|-------------|
-| 1 | `SessionStore::list()` + `SessionMeta` — pure data, no CLI changes |
-| 2 | `slug_from_message()` in `session/slug.rs` — deterministic, fully testable |
-| 3 | Always-on persistence in `run_headless()` + `--resume`/`--fork` CLI flags |
-| 4 | `ap sessions` subcommand with formatted table output |
-| 5 | Always-on persistence in `run_tui()`, `TurnEvent::SessionSaved`, status bar |
-| 6 | TUI session browser overlay (`s` key, preview pane, Enter/f/Esc) |
-| 7 | `--resume` / `--fork` wiring into TUI mode + `fuzzy_find()` |
+## Requirements
 
-Key design decisions captured in the prompt:
-- **`Conversation.id` is the session name** — no new field, slug becomes the id on first save
-- **"pending-`<uuid>`" placeholder** until the first message arrives in TUI mode, then replaced with the slug
-- **`SessionMeta` is derived from on-disk `Conversation` files** (not the legacy `Session` struct) so it stays consistent with what `save_conversation` actually writes
-- All new code must pass the project's existing `#![deny(clippy::unwrap_used)]` etc. lints
+### 1. Auto-name sessions
+- On first turn of any session (interactive or headless), generate a session name if none set
+- Name format: adjective-noun (e.g. `swift-river`, `bold-pine`) — deterministic from timestamp or random
+- Store in `~/.ap/sessions/<name>/` as JSONL conversation file
+
+### 2. Persist `--prompt` mode sessions
+- Currently `ap --prompt "..."` discards history after run
+- Fix: save to `~/.ap/sessions/<name>/conversation.jsonl` same as interactive mode
+- Print session name at end: `Session saved: swift-river`
+
+### 3. Resume sessions
+- Add `--session <name>` / `-s <name>` flag to `ap`
+- Load conversation history from `~/.ap/sessions/<name>/conversation.jsonl` on startup
+- If session not found, print error and exit
+
+### 4. Session store module
+- `src/session/store.rs` — functions: `save(name, messages)`, `load(name) -> Vec<Message>`, `list() -> Vec<SessionMeta>`, `generate_name() -> String`
+- Sessions dir: `~/.ap/sessions/`
+- Each session: `~/.ap/sessions/<name>/conversation.jsonl` (one JSON object per line)
+
+### 5. List sessions
+- `ap --list-sessions` prints all saved sessions with name, date, message count
+- Format: `swift-river  2026-03-22  14 messages`
+
+## Acceptance Criteria
+
+- `ap --prompt "hello"` saves session to `~/.ap/sessions/<name>/`
+- `ap -s swift-river` resumes the session and continues the conversation
+- `ap --list-sessions` shows all saved sessions
+- `cargo build` passes
+- `cargo test` passes (≥204 tests)
+
+Output LOOP_COMPLETE when all acceptance criteria are met and the project builds clean.
