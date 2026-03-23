@@ -19,7 +19,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 > **Bootstrap goal:** ap builds ap. Critical path: Provider abstraction → AGENTS.md → Self-hosting. Everything else is secondary until the loop flips.
 
-0. [x] **Session persistence in --prompt mode** — `ap --prompt "..."` (non-interactive/headless) currently discards session history; it should save to `~/.ap/sessions/` just like interactive mode:
+0a. [ ] **Session persistence in --prompt mode** — `ap --prompt "..."` (non-interactive/headless) currently discards session history; it should save to `~/.ap/sessions/` just like interactive mode:
     - On startup in `--prompt` mode, create a named session (slug from prompt, e.g. `prompt-read-backlog-2026-03-22`) same as interactive
     - After turn completes, save session to `~/.ap/sessions/<name>.json`
     - `--session <name>` flag works in `--prompt` mode to explicitly name/resume a session
@@ -46,7 +46,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 4. [x] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
 
-5. [x] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
+5. [ ] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
     - Every `ap` invocation creates a named session immediately — name auto-generated from first user message (short slug, e.g. `refactor-auth-module-2026-03-22`)
     - `--session <name>` to give an explicit name at startup
     - Sessions saved to `~/.ap/sessions/<name>.json` after every turn
@@ -57,14 +57,14 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - TUI: `s` key opens session browser overlay — scrollable list, preview pane, Enter to resume, `f` to fork
     - Remove the `--session` opt-in flag concept entirely — persistence is always on
 
-6. [x] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
+6. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
     - `/model <id>` command in TUI input switches active model immediately
     - `--model` CLI flag overrides config at startup
     - Model displayed in TUI status bar
     - Works across all providers (Bedrock, OpenAI-compat)
     - Recent models remembered in `~/.ap/models.json` for quick switching
 
-7b. [ ] **TUI overhaul — simple Claude Code / pi style UI** — Current TUI is too busy and broken (Ctrl+Enter inserts newline instead of submitting). Replace with a clean, minimal chat UI:
+0. [ ] **TUI overhaul — simple Claude Code / pi style UI** — Current TUI is too busy and broken (Ctrl+Enter inserts newline instead of submitting). Replace with a clean, minimal chat UI:
     - **Input:** Single-line input bar at bottom (like pi/claude code). Enter submits. Shift+Enter or `\n` in input for newlines if needed. No multi-line editor widget.
     - **Chat area:** Scrollable message history above input. User messages right-aligned or prefixed `You:`, assistant left-aligned or prefixed `ap:`. Plain text rendering, no heavy layout.
     - **Status bar:** Single line at very top or bottom showing: model name, session name, token count. Nothing else.
@@ -73,7 +73,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Reference:** pi's TUI (single input line, clean scroll), Claude Code's terminal output style (assistant text streamed inline, no framed boxes).
     - Acceptance: `ap` launches, shows clean input prompt, user types, Enter submits, response streams in, feels like a normal terminal chat tool.
 
-7. [x] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
+7. [ ] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
 
     **API details** (from pi-provider-kiro reference impl at ~/Projects/pi-provider-kiro):
     - Endpoint: `https://q.us-east-1.amazonaws.com/generateAssistantResponse`
@@ -102,7 +102,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
     **Reference:** ~/Projects/pi-provider-kiro/src/ — full TypeScript implementation to port from.
 
-8. [x] **Code review + aggressive refactor pass** — Full codebase review and cleanup:
+8. [ ] **Code review + aggressive refactor pass** — Full codebase review and cleanup:
     - Audit all public APIs for consistency (naming, error types, return conventions)
     - Identify and eliminate any remaining mutable state outside the turn pipeline
     - Dead code removal, unused dependencies pruned from Cargo.toml
@@ -111,7 +111,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Clippy pedantic pass: fix all warnings, document any intentional allows
     - Write architectural decision records (ADRs) for key design choices in docs/
 
-9. [x] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
+9. [ ] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
     - Slash command or @mention triggers ap in any channel or DM
     - Streaming responses posted as editable Slack messages (updated chunk by chunk)
     - Tool calls shown as threaded replies (collapsible)
@@ -120,7 +120,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Socket Mode for no-ingress-required deployment
     - Runs as a daemon: `ap slack-bot`
 
-10. [x] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
+10. [ ] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
     - **Background bash tool** — `bash` tool gains `background: true` param. Spawns process detached, returns a `job_id` immediately. Claude can continue the conversation while it runs.
     - **Jobs panel in TUI** — New right-side panel (or toggleable overlay, `j` key) showing running/completed background jobs: name, pid, status, runtime, last line of output
     - **Job alerts** — When a background job completes (or errors), a non-blocking notification appears in the TUI status bar. Claude is also notified via a synthetic tool result injected into the next turn: `{"job_id": "...", "exit_code": 0, "stdout_tail": "..."}`
@@ -130,7 +130,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 11. [x] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
 
-12. [x] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
+12. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
     - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
     - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
     - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
@@ -139,7 +139,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
     - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
 
-13. [x] **LSP integration** — Connect to running language servers for code-aware context:
+13. [ ] **LSP integration** — Connect to running language servers for code-aware context:
     - `lsp` built-in tool: `{ "op": "hover" | "definition" | "references" | "diagnostics" | "completion", "file": "...", "line": N, "col": N }`
     - ap spawns or connects to an existing LSP server based on project language, detected from cwd
     - Results injected as tool output
@@ -153,9 +153,9 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 16. [x] **Richer TUI** — Already merged.
 
-17. [x] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
+17. [ ] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
 
-18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
+18. [ ] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
 
 19. [x] **Robust file editing** — Reliable, no-friction file edits by default:

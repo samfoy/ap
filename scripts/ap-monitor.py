@@ -105,16 +105,43 @@ RALPH_LOG = AP_DIR / ".monitor-ralph.log"
 
 
 def loop_completed():
+    """Returns True only if LOOP_COMPLETE was genuinely accepted (not just loop.terminate on failure)."""
     scratchpad = AP_DIR / ".ralph/agent/scratchpad.md"
     if scratchpad.exists() and "LOOP_COMPLETE" in scratchpad.read_text():
         return True
     for events_file in sorted((AP_DIR / ".ralph").glob("events-*.jsonl")):
         try:
             lines = events_file.read_bytes().decode("utf-8", errors="replace").strip().splitlines()
-            for line in reversed(lines[-10:]):
+            for line in reversed(lines[-20:]):
                 try:
                     d = json.loads(line)
-                    if d.get("topic") in ("loop.terminate", "LOOP_COMPLETE"):
+                    topic = d.get("topic", "")
+                    # loop.terminate means ralph stopped but NOT due to successful LOOP_COMPLETE
+                    # Only treat as complete if we see an actual LOOP_COMPLETE event
+                    if topic == "LOOP_COMPLETE":
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return False
+
+
+def loop_failed():
+    """Returns True if ralph terminated due to failures (not successful completion)."""
+    for events_file in sorted((AP_DIR / ".ralph").glob("events-*.jsonl")):
+        try:
+            lines = events_file.read_bytes().decode("utf-8", errors="replace").strip().splitlines()
+            for line in reversed(lines[-20:]):
+                try:
+                    d = json.loads(line)
+                    topic = d.get("topic", "")
+                    payload = d.get("payload", {})
+                    reason = payload.get("reason", "") if isinstance(payload, dict) else ""
+                    if topic == "loop.terminate" and reason in (
+                        "consecutive_failures", "loop_thrashing", "stale_loop",
+                        "validation_failure", "max_iterations"
+                    ):
                         return True
                 except Exception:
                     continue
@@ -151,9 +178,9 @@ def spawn_ralph(title):
 
     scratchpad = AP_DIR / ".ralph/agent/scratchpad.md"
     if scratchpad.exists():
-        cmd = f"nohup ralph run --no-tui --idle-timeout 300 --continue >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup ralph run --no-tui --backend ap --idle-timeout 300 -H builtin:code-assist --continue >> {RALPH_LOG} 2>&1 &"
     else:
-        cmd = f"nohup ralph run --no-tui --idle-timeout 300 >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup ralph run --no-tui --backend ap --idle-timeout 300 -H builtin:code-assist >> {RALPH_LOG} 2>&1 &"
     run(cmd)
     time.sleep(3)
     if ralph_running():
@@ -263,6 +290,18 @@ def main():
                     log(f"Review: {rev}")
                     update_memory(current_title, rev)
 
+                    # Verify something actually landed in src/
+                    src_changes = run("git diff HEAD~1 --name-only -- 'ap/src/'").stdout.strip()
+                    if not src_changes:
+                        log(f"⚠️  No src/ changes detected for {current_title} — marking failed, requeueing")
+                        set_item_status(current_title, " ")
+                        git_commit(f"chore(monitor): requeue {current_title} (no src changes)")
+                        current_title = None
+                        current_started_at = None
+                        last_restart_at = 0
+                        time.sleep(10)
+                        continue
+
                     # Clean up ephemeral state, commit, push
                     for pat in [".ralph/", "PROMPT.md", ".monitor-ralph.log"]:
                         p = AP_DIR / pat
@@ -276,6 +315,12 @@ def main():
                     current_title = None
                     current_started_at = None
                     last_restart_at = 0
+                elif loop_failed():
+                    log(f"⚠️  Ralph terminated with failures for {current_title} — restarting loop")
+                    run(f"rm -rf '{AP_DIR / '.ralph'}'")
+                    last_restart_at = 0
+                    spawn_ralph(current_title)
+                    last_restart_at = time.time()
                 else:
                     # Stall detection
                     evt_time = last_event_time()
