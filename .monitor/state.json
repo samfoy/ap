@@ -1,1 +1,7 @@
-{}
+{
+  "Retry with exponential backoff": {
+    "wt": "/Users/sam.painter/Projects/ap-worktrees/retry-with-exponential-backoff",
+    "started_at": 1774225317.770195,
+    "last_restart_at": 0
+  }
+}

@@ -313,3 +313,8 @@ The log is mismatched to the stated goal. The five meaningful commits (`0d09b36`
 [17:18:57] Merged and cleaned up worktree for: Prompt templates
 [17:19:00] Starting: Retry with exponential backoff
 [17:19:00] Created worktree: /Users/sam.painter/Projects/ap-worktrees/retry-with-exponential-backoff (feature/retry-with-exponential-backoff)
+[17:21:57] Ralph running for Retry with exponential backoff
+[17:22:27] LOOP_COMPLETE: Retry with exponential backoff
+[17:22:36] Review: The feature **did not land** — `e784280` only committed a `PROMPT.md` spec file outlining the plan; no actual Rust code was written. There is zero implementation in `src/`: no `src/retry.rs`, no `RetryConfig`, no `ProviderError::RateLimited`, no `TurnEvent::Retrying`, and no TUI wiring. The loop appears to have initialised the task and then pivoted entirely to a different feature (Prompt templates), never returning to execute any of the six implementation steps. The gap is total — it's a spec with no code behind it.
+[17:22:36] Merging feature/retry-with-exponential-backoff into main...
+[17:22:36] Merged and cleaned up worktree for: Retry with exponential backoff

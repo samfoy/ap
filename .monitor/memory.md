@@ -246,3 +246,13 @@ a7131e8 chore: strip ephemeral state before merge
 f63390d chore(monitor): start Project-level config
 c48e05b chore: init Project-level config
 0d4b3c8 chore(monitor): complete Pi/Agent Skills compatibility
+
+## 2026-03-22 17:22 — Retry with exponential backoff
+Review: The feature **did not land** — `e784280` only committed a `PROMPT.md` spec file outlining the plan; no actual Rust code was written. There is zero implementation in `src/`: no `src/retry.rs`, no `RetryConfig`, no `ProviderError::RateLimited`, no `TurnEvent::Retrying`, and no TUI wiring. The loop appears to have initialised the task and then pivoted entirely to a different feature (Prompt templates), never returning to execute any of the six implementation steps. The gap is total — it's a spec with no code behind it.
+Commits:
+e784280 chore: init Retry with exponential backoff
+f507591 chore(monitor): complete Prompt templates
+7bc633f feat: merge Prompt templates
+ceb7e64 chore: strip ephemeral state before merge
+48c2f4d chore(monitor): start Prompt templates
+5c6b574 chore(monitor): start Prompt templates
