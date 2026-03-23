@@ -422,3 +422,15 @@ dddceaf chore: init Robust file editing
 a618ee7 chore(monitor): complete Image support
 8eea5b9 chore: init Image support
 8527d87 chore(monitor): complete Markdown + Mermaid rendering
+
+## 2026-03-22 21:07 — Pi/Agent Skills compatibility
+Review: **Did not land cleanly — it's an `init` commit with no corresponding `monitor: complete`.**
+
+The `init` commit only tickmarks the backlog item to `[~]` (in-progress), adds a stray `PROMPT.md` placeholder, and logs the start time — zero `src/` changes. Every prior feature in this log follows the `init → monitor: complete` pair pattern, but `Pi/Agent Skills compatibility` has only its `init`; the implementation (subdirectory skill discovery, frontmatter upgrades, `/skill:<name>` commands, progressive-disclosure injection, etc.) was never written or merged. The gap is the entire feature.
+Commits:
+1094cf9 chore: init Pi/Agent Skills compatibility
+c82ea78 chore(monitor): complete Amazon toolchain integration
+2075d3f chore: init Amazon toolchain integration
+f70b6f6 chore(monitor): complete Robust file editing
+dddceaf chore: init Robust file editing
+a618ee7 chore(monitor): complete Image support

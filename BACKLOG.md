@@ -176,7 +176,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Common patterns:** `ap "what's failing in my last brazil build"` auto-finds the build log; `ap "get the CloudWatch logs for service X"` uses current AWS profile
     - Config: `[aws] ada_enabled = true, default_profile = "auto"`
 
-21. [~] **Pi/Agent Skills compatibility** — Full support for the [Agent Skills standard](https://agentskills.io/specification) and pi skill conventions:
+21. [x] **Pi/Agent Skills compatibility** — Full support for the [Agent Skills standard](https://agentskills.io/specification) and pi skill conventions:
 
     **Discovery (expand current flat `.md` loader):**
     - Support subdirectory skills: scan for `SKILL.md` recursively under each skills dir (e.g. `~/.ap/skills/my-skill/SKILL.md`)

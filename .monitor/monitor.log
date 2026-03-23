@@ -571,3 +571,13 @@ The gap is the entire feature: no `src/editing/mod.rs`, no `EditBatch`/`PendingW
 [21:04:20] Review: (review error: Command '['zsh', '-l', '-c', "/Users/sam.painter/Projects/ap/ap/target/release/ap --prompt 'Review this git log for the ap Rust project. Goal was: Amazon toolchain integration\n\n2075d3f chore: init Amazon toolchain integration\nf70b6f6 chore(monitor): complete Robust file editing\ndddceaf chore: init Robust file editing\na618ee7 chore(monitor): complete Image support\n8eea5b9 chore: init Image support\n8527d87 chore(monitor): complete Markdown + Mermaid rendering\nbfd88d1 chore: init Markdown + Mermaid rendering\na3e43a5 chore(monitor): complete LSP integration\n\nIn 2-3 sentences: did it land cleanly? Any gaps?'"]' timed out after 60 seconds)
 [21:04:22] Starting: Pi/Agent Skills compatibility
 [21:04:22] Starting: Pi/Agent Skills compatibility
+[21:07:10] Ralph running for Pi/Agent Skills compatibility
+[21:07:10] Ralph running for Pi/Agent Skills compatibility
+[21:07:40] LOOP_COMPLETE: Pi/Agent Skills compatibility
+[21:07:40] LOOP_COMPLETE: Pi/Agent Skills compatibility
+[21:07:55] Review: **Did not land cleanly — it's an `init` commit with no corresponding `monitor: complete`.**
+
+The `init` commit only tickmarks the backlog item to `[~]` (in-progress), adds a stray `PROMPT.md` placeholder, and logs the start time — zero `src/` changes. Every prior feature in this log follows the `init → monitor: complete` pair pattern, but `Pi/Agent Skills compatibility` has only its `init`; the implementation (subdirectory skill discovery, frontmatter upgrades, `/skill:<name>` commands, progressive-disclosure injection, etc.) was never written or merged. The gap is the entire feature.
+[21:07:55] Review: **Did not land cleanly — it's an `init` commit with no corresponding `monitor: complete`.**
+
+The `init` commit only tickmarks the backlog item to `[~]` (in-progress), adds a stray `PROMPT.md` placeholder, and logs the start time — zero `src/` changes. Every prior feature in this log follows the `init → monitor: complete` pair pattern, but `Pi/Agent Skills compatibility` has only its `init`; the implementation (subdirectory skill discovery, frontmatter upgrades, `/skill:<name>` commands, progressive-disclosure injection, etc.) was never written or merged. The gap is the entire feature.
