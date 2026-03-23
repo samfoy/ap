@@ -703,3 +703,5 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 **The session management goal itself did not land.** The BACKLOG item is honestly marked `[~]` (in-progress), and the code confirms it: persistence is still opt-in behind `--session <name>`, auto-naming from the first message slug is absent, `ap sessions` list/resume/fork subcommands don't exist, the TUI `s`-key session browser was never built, and `run_tui` still ignores the session it receives (the arg is `_session`). The init commit (`b0c07d2`) only touched the log, BACKLOG, and a stub `PROMPT.md` — the actual feature work never started before the branch ended.
 [23:02:03] ⚠️  No src/ changes detected for Session management UX — marking failed, requeueing
 [23:02:03] ⚠️  No src/ changes detected for Session management UX — marking failed, requeueing
+[23:02:13] Starting: Session management UX
+[23:02:13] Starting: Session management UX
