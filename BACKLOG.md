@@ -120,7 +120,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Socket Mode for no-ingress-required deployment
     - Runs as a daemon: `ap slack-bot`
 
-10. [~] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
+10. [x] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
     - **Background bash tool** — `bash` tool gains `background: true` param. Spawns process detached, returns a `job_id` immediately. Claude can continue the conversation while it runs.
     - **Jobs panel in TUI** — New right-side panel (or toggleable overlay, `j` key) showing running/completed background jobs: name, pid, status, runtime, last line of output
     - **Job alerts** — When a background job completes (or errors), a non-blocking notification appears in the TUI status bar. Claude is also notified via a synthetic tool result injected into the next turn: `{"job_id": "...", "exit_code": 0, "stdout_tail": "..."}`

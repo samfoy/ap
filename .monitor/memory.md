@@ -326,3 +326,15 @@ ccc0ba2 chore: regenerate PROMPT.md for Kiro provider
 955da39 fix(monitor): use zsh login shell for all subprocess calls
 d5eef4e backlog: add TUI overhaul item — simple pi/claude-code style UI, fix Ctrl+Enter
 c910f4b fix(monitor): revert to ap backend (claude auth lapsed), keep idle-timeout 300s
+
+## 2026-03-22 20:40 — Background process management + tmux sub-agents
+Review: **No, it did not land.** The "init" commit (`f8c1722`) is pure bookkeeping — it flips the BACKLOG checkbox to `[~]`, appends two duplicate log lines, and leaves a broken one-liner `PROMPT.md` stub (`"Now I have a thorough understanding of the codebase. Let me write the PROMPT.md:"`); zero Rust or implementation files were written. There is no subsequent "complete" commit for this goal in the log at all — unlike prior goals (Kiro, Slack bot) which at least got a paired `chore(monitor): complete` entry, this one was abandoned mid-cycle with only the "init" half.
+
+**The gap:** No background process execution, no `job_id` system, no jobs TUI panel, no tmux sub-agent wiring — the task never started at the implementation level. The broader pattern across this log is also worth flagging: the monitor is consistently conflating *acknowledging* a task (flipping `[ ]` → `[~]`) with *completing* it, which is the same failure mode seen in the Slack bot and Kiro provider cycles before this one.
+Commits:
+f8c1722 chore: init Background process management + tmux sub-agents
+1d4e53e chore(monitor): complete Slack bot integration
+1241ad0 chore: init Slack bot integration
+b2c0126 chore(monitor): complete Kiro provider
+ccc0ba2 chore: regenerate PROMPT.md for Kiro provider
+955da39 fix(monitor): use zsh login shell for all subprocess calls
