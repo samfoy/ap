@@ -19,7 +19,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 > **Bootstrap goal:** ap builds ap. Critical path: Provider abstraction → AGENTS.md → Self-hosting. Everything else is secondary until the loop flips.
 
-0. [ ] **Session persistence in --prompt mode** — `ap --prompt "..."` (non-interactive/headless) currently discards session history; it should save to `~/.ap/sessions/` just like interactive mode:
+0. [~] **Session persistence in --prompt mode** — `ap --prompt "..."` (non-interactive/headless) currently discards session history; it should save to `~/.ap/sessions/` just like interactive mode:
     - On startup in `--prompt` mode, create a named session (slug from prompt, e.g. `prompt-read-backlog-2026-03-22`) same as interactive
     - After turn completes, save session to `~/.ap/sessions/<name>.json`
     - `--session <name>` flag works in `--prompt` mode to explicitly name/resume a session

@@ -374,3 +374,8 @@ For more information, try '--help'.
 [19:31:17] LOOP_COMPLETE: Model switching
 [19:32:02] Review: Now I have a clear picture. The goal was **Model switching** but the session's work was entirely on **Retry with exponential backoff**. Let me confirm there's no model switching code at all.**No, it did not land.** The session worked on **Retry with exponential backoff** (backlog item 24) instead of the stated goal of **Model switching** (item 6) — and even the retry work didn't land: commit `16be289` explicitly reset items 22–24 back to incomplete, acknowledging they were spec-only with no implementation. The gap is total: zero model-switching code exists (`/model` TUI command, `--model` CLI flag, `models.json` recent-model history, and mid-session provider switching are all absent from `src/`), and the backlog correctly reflects item 6 as `[~]` in-progress but unimplemented.
 [19:32:03] Starting: Robust file editing
+[19:34:47] Ralph running for Robust file editing
+[19:47:24] ap monitor started (direct-on-main mode)
+[19:47:24] ap monitor started (direct-on-main mode)
+[19:47:24] Starting: Session persistence in --prompt mode
+[19:47:24] Starting: Session persistence in --prompt mode
