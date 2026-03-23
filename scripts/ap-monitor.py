@@ -184,7 +184,8 @@ End with: Output LOOP_COMPLETE when all acceptance criteria are met and the proj
 Output only the PROMPT.md content."""
 
     r = subprocess.run(
-        ["claude", "--print", "--permission-mode", "bypassPermissions", "-p", context],
+        [AP_DIR / "ap" / "target" / "release" / "ap",
+         "--prompt", context],
         capture_output=True, text=True, env={**os.environ}, timeout=300
     )
     if r.returncode == 0 and r.stdout.strip():
@@ -202,7 +203,8 @@ def review(title):
     try:
         commits = run("git log --oneline -8").stdout.strip()
         r = subprocess.run(
-            ["claude", "--print", "--permission-mode", "bypassPermissions", "-p",
+            [AP_DIR / "ap" / "target" / "release" / "ap",
+             "--prompt",
              f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"],
             capture_output=True, text=True, env={**os.environ}, timeout=60
         )
