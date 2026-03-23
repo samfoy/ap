@@ -413,3 +413,17 @@ The gap is the entire feature — all 204 passing tests are pre-existing, none b
 [19:56:50] Review: Let me review the relevant files from this project before giving you an assessment.**No, it did not land.** The monitor's own `memory.md` is unambiguous: the "Model switching" session worked on the wrong backlog item entirely (Retry with exponential backoff), and even that work was explicitly reset as spec-only with no implementation. Zero model-switching Rust code exists — no `/model` TUI command, no `--model` CLI flag, no provider-switching logic — and `src/` shows no commits across the entire range `f5a80a2..HEAD`.
 
 **The gap is total and structural.** Two subsequent sessions (Session persistence, Provider abstraction) also failed to land any code for the same reason: the loop writes a detailed spec into `ap/PROMPT.md` and flips the backlog item to `[~]`, then times out or hits consecutive failures before executing a single implementation step. The `f5a80a2` "init Model switching" commit arriving after "complete Provider abstraction" (`70f2849`) also signals the monitor is starting a new loop in a broken sequence rather than closing a completed one.
+[19:56:54] Starting: Kiro provider
+[19:56:54] Starting: Kiro provider
+[20:22:52] ap monitor started (direct-on-main mode)
+[20:22:52] ap monitor started (direct-on-main mode)
+[20:22:52] Resuming in-progress item: Kiro provider
+[20:22:52] Resuming in-progress item: Kiro provider
+[20:22:52] PROMPT.md missing — regenerating for Kiro provider
+[20:22:52] PROMPT.md missing — regenerating for Kiro provider
+[20:24:39] ap monitor started (direct-on-main mode)
+[20:24:39] ap monitor started (direct-on-main mode)
+[20:24:39] Resuming in-progress item: Kiro provider
+[20:24:39] Resuming in-progress item: Kiro provider
+[20:24:39] PROMPT.md missing — regenerating for Kiro provider
+[20:24:39] PROMPT.md missing — regenerating for Kiro provider

@@ -151,9 +151,9 @@ def spawn_ralph(title):
 
     scratchpad = AP_DIR / ".ralph/agent/scratchpad.md"
     if scratchpad.exists():
-        cmd = f"nohup ralph run --no-tui --continue >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup ralph run --no-tui --idle-timeout 300 --continue >> {RALPH_LOG} 2>&1 &"
     else:
-        cmd = f"nohup ralph run --no-tui >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup ralph run --no-tui --idle-timeout 300 >> {RALPH_LOG} 2>&1 &"
     run(cmd)
     time.sleep(3)
     if ralph_running():
@@ -184,8 +184,7 @@ End with: Output LOOP_COMPLETE when all acceptance criteria are met and the proj
 Output only the PROMPT.md content."""
 
     r = subprocess.run(
-        [AP_DIR / "ap" / "target" / "release" / "ap",
-         "--prompt", context],
+        ["claude", "--print", "--permission-mode", "bypassPermissions", "-p", context],
         capture_output=True, text=True, env={**os.environ}, timeout=300
     )
     if r.returncode == 0 and r.stdout.strip():
@@ -203,8 +202,7 @@ def review(title):
     try:
         commits = run("git log --oneline -8").stdout.strip()
         r = subprocess.run(
-            [AP_DIR / "ap" / "target" / "release" / "ap",
-             "--prompt",
+            ["claude", "--print", "--permission-mode", "bypassPermissions", "-p",
              f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"],
             capture_output=True, text=True, env={**os.environ}, timeout=60
         )

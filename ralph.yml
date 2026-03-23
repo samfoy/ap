@@ -2,7 +2,7 @@
 # Docs: https://github.com/mikeyobrien/ralph-orchestrator
 
 cli:
-  backend: "ap"
+  backend: "claude"
 
 event_loop:
   prompt_file: "PROMPT.md"
