@@ -543,3 +543,5 @@ The broader pattern in this log is consistent: every other feature has a paired 
 [20:56:15] Review: Looking at the log, the Image support goal **did not land cleanly** — commit `8eea5b9` only shows an "init" for Image support with no corresponding "complete(monitor)" commit, meaning the feature was started but never finished or verified.
 
 The broader pattern in this log is consistent: every other feature has a paired `init` → `complete(monitor)` commit (Markdown/Mermaid, LSP, Semantic search, Streaming), but Image support is missing its closing commit, leaving it as an incomplete stub.
+[20:56:17] Starting: Robust file editing
+[20:56:17] Starting: Robust file editing
