@@ -266,3 +266,15 @@ Commits:
 37a8446 chore(monitor): complete Retry with exponential backoff
 f2ab7b1 feat: merge Retry with exponential backoff
 f990c45 chore: strip ephemeral state before merge
+
+## 2026-03-22 19:49 — Session persistence in --prompt mode
+Review: **No, it did not land cleanly.** The goal — session persistence in `--prompt` mode — was never implemented. The loop's own summary admits it **failed** ("Failed: too many consecutive failures, 5 iterations, 4s"), and the only real output was scaffolding: a detailed `ap/PROMPT.md` spec and the backlog item flipped from `[ ]` to `[~]` (in-progress), not `[x]`.
+
+**The gap is the entire feature.** No Rust code was written — `src/main.rs`, `run_headless`, slug generation, and `SessionStore` integration were all left untouched. The commits in this range are entirely monitor/tooling fixes (`cf46ba6`, `7fc110e`, `2ed216d`) and planning artifacts, not the actual persistence implementation.
+Commits:
+cd227c5 chore: init Session persistence in --prompt mode
+cf46ba6 fix(monitor): drop pdd-to-code-assist hat — use ap via Bedrock directly
+c6e7ea8 chore(backlog): add session persistence in --prompt mode as item 0
+f696785 chore: honest backlog reset + comprehensive PROMPT.md for full implementation loop
+45439ad chore: init Robust file editing
+eab8544 chore(monitor): complete Model switching
