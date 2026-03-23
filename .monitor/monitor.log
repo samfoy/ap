@@ -311,3 +311,5 @@ The log is mismatched to the stated goal. The five meaningful commits (`0d09b36`
 [17:18:57] Review: The commits tell a clear story: **the goal was Prompt templates (item 23), but what landed was Project-level config (item 22).** The entire commit range (`c48e05b` → `618b4ed`) is exclusively Project-level config — `PROMPT.md` describes config discovery, `BACKLOG.md` shows item 22 ticked and item 23 marked `[~]` (in-progress). No source changes touched anything prompt-template related; the feature work is still ahead. That said, item 22 appears to have landed cleanly — the BACKLOG spec is well-defined and `PROMPT.md` is fully written — so the loop was productive, just one item behind the stated goal.
 [17:18:57] Merging feature/prompt-templates into main...
 [17:18:57] Merged and cleaned up worktree for: Prompt templates
+[17:19:00] Starting: Retry with exponential backoff
+[17:19:00] Created worktree: /Users/sam.painter/Projects/ap-worktrees/retry-with-exponential-backoff (feature/retry-with-exponential-backoff)

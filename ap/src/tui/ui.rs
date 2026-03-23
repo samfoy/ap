@@ -6,13 +6,13 @@
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 
-use crate::tui::{AppMode, TuiApp};
+use crate::tui::{AppMode, Theme, TuiApp};
 
 // ─── Pricing constants (Claude 3.5 Sonnet) ────────────────────────────────────
 
@@ -47,7 +47,7 @@ pub fn render(frame: &mut Frame, app: &TuiApp) {
 
     // ── Help overlay (drawn on top) ──────────────────────────────────────────
     if app.show_help {
-        render_help_overlay(frame);
+        render_help_overlay(frame, &app.theme);
     }
 }
 
@@ -91,8 +91,8 @@ fn render_status_bar(frame: &mut Frame, app: &TuiApp, area: Rect) {
     );
     let status = Paragraph::new(text).style(
         Style::default()
-            .bg(Color::Blue)
-            .fg(Color::White)
+            .bg(app.theme.status_bar_bg)
+            .fg(app.theme.status_bar_fg)
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(status, area);
@@ -113,10 +113,14 @@ fn render_main_area(frame: &mut Frame, app: &TuiApp, area: Rect) {
 
 /// Convert a slice of [`ChatEntry`]s into ratatui [`Line`]s for rendering.
 ///
-/// User entries are prefixed with a `[You]` label in Cyan bold. Code blocks are
-/// styled with `bg(Color::Rgb(30, 30, 30)).fg(Color::White)` and wrapped in
-/// Yellow header/footer lines. Used by [`render_conversation`] and unit tests.
-pub fn chat_entries_to_lines<'a>(history: &'a [crate::tui::ChatEntry]) -> Vec<Line<'a>> {
+/// User entries are prefixed with a `[You]` label styled with `theme.accent`
+/// bold.  Code blocks are rendered with `theme.code_bg`/`theme.code_fg` and
+/// `theme.code_border` header/footer lines.  Used by [`render_conversation`]
+/// and unit tests.
+pub fn chat_entries_to_lines<'a>(
+    history: &'a [crate::tui::ChatEntry],
+    theme: &Theme,
+) -> Vec<Line<'a>> {
     use crate::tui::{ChatBlock, ChatEntry};
 
     let mut lines: Vec<Line> = Vec::new();
@@ -124,11 +128,11 @@ pub fn chat_entries_to_lines<'a>(history: &'a [crate::tui::ChatEntry]) -> Vec<Li
     for entry in history {
         match entry {
             ChatEntry::User(text) => {
-                // "[You]" prefix line in Cyan bold
+                // "[You]" prefix line in accent bold
                 lines.push(Line::from(Span::styled(
                     "[You]",
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(theme.accent)
                         .add_modifier(Modifier::BOLD),
                 )));
                 for line in text.lines() {
@@ -150,18 +154,18 @@ pub fn chat_entries_to_lines<'a>(history: &'a [crate::tui::ChatEntry]) -> Vec<Li
                             }
                         }
                         ChatBlock::Code { lang, content } => {
-                            let yellow = Style::default().fg(Color::Yellow);
-                            // Header line in Yellow (line-level style so tests can check `.style`)
-                            lines.push(Line::styled(format!(" ┌─ {lang} "), yellow));
-                            // Body lines with dark bg + white fg
+                            let border_style = Style::default().fg(theme.code_border);
+                            // Header line
+                            lines.push(Line::styled(format!(" ┌─ {lang} "), border_style));
+                            // Body lines
                             let code_style = Style::default()
-                                .bg(Color::Rgb(30, 30, 30))
-                                .fg(Color::White);
+                                .bg(theme.code_bg)
+                                .fg(theme.code_fg);
                             for line in content.lines() {
                                 lines.push(Line::styled(line.to_string(), code_style));
                             }
-                            // Footer line in Yellow
-                            lines.push(Line::styled(" └────────", yellow));
+                            // Footer line
+                            lines.push(Line::styled(" └────────", border_style));
                         }
                     }
                 }
@@ -174,7 +178,7 @@ pub fn chat_entries_to_lines<'a>(history: &'a [crate::tui::ChatEntry]) -> Vec<Li
 }
 
 fn render_conversation(frame: &mut Frame, app: &TuiApp, area: Rect) {
-    let lines = chat_entries_to_lines(&app.chat_history);
+    let lines = chat_entries_to_lines(&app.chat_history, &app.theme);
 
     use ratatui::text::Text;
     let para = Paragraph::new(Text::from(lines))
@@ -203,21 +207,21 @@ fn render_tool_panel(frame: &mut Frame, app: &TuiApp, area: Rect) {
 
         // Icon colour
         let icon_style = match &entry.result {
-            None => Style::default().fg(Color::Yellow),
+            None => Style::default().fg(app.theme.warning),
             Some(_) => {
                 if entry.is_error {
-                    Style::default().fg(Color::Red)
+                    Style::default().fg(app.theme.error)
                 } else {
-                    Style::default().fg(Color::Green)
+                    Style::default().fg(app.theme.success)
                 }
             }
         };
 
         let header_style = if is_selected {
             Style::default()
-                .fg(Color::White)
+                .fg(app.theme.text_color)
                 .add_modifier(Modifier::BOLD)
-                .bg(Color::DarkGray)
+                .bg(app.theme.selected_bg)
         } else {
             Style::default()
         };
@@ -234,7 +238,7 @@ fn render_tool_panel(frame: &mut Frame, app: &TuiApp, area: Rect) {
         if entry.expanded {
             lines.push(Line::from(vec![
                 Span::raw("    "),
-                Span::styled("params: ", Style::default().fg(Color::Gray)),
+                Span::styled("params: ", Style::default().fg(app.theme.muted)),
                 Span::raw(entry.params.clone()),
             ]));
             if let Some(result) = &entry.result {
@@ -246,7 +250,7 @@ fn render_tool_panel(frame: &mut Frame, app: &TuiApp, area: Rect) {
                 };
                 lines.push(Line::from(vec![
                     Span::raw("    "),
-                    Span::styled("result: ", Style::default().fg(Color::Gray)),
+                    Span::styled("result: ", Style::default().fg(app.theme.muted)),
                     Span::raw(truncated),
                 ]));
             }
@@ -267,8 +271,8 @@ fn render_input_box(frame: &mut Frame, app: &TuiApp, area: Rect) {
         AppMode::Insert => "Input  [Esc=normal  Enter=newline  Ctrl+Enter=send  Ctrl+C=quit]",
     };
     let border_style = match app.mode {
-        AppMode::Normal => Style::default().fg(Color::Gray),
-        AppMode::Insert => Style::default().fg(Color::Yellow),
+        AppMode::Normal => Style::default().fg(app.theme.border_normal),
+        AppMode::Insert => Style::default().fg(app.theme.border_insert),
     };
     let para = Paragraph::new(app.input_buffer.as_str())
         .block(
@@ -298,7 +302,7 @@ fn render_input_box(frame: &mut Frame, app: &TuiApp, area: Rect) {
 
 // ─── Help overlay ─────────────────────────────────────────────────────────────
 
-fn render_help_overlay(frame: &mut Frame) {
+fn render_help_overlay(frame: &mut Frame, theme: &Theme) {
     let area = centered_rect(60, 60, frame.area());
 
     // Clear the area behind the overlay so it looks like a modal
@@ -308,58 +312,58 @@ fn render_help_overlay(frame: &mut Frame) {
         Line::from(vec![Span::styled(
             " Key Bindings",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme.md_heading)
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  i / Enter  ", Style::default().fg(Color::Green)),
+            Span::styled("  i / Enter  ", Style::default().fg(theme.success)),
             Span::raw("Enter Insert mode"),
         ]),
         Line::from(vec![
-            Span::styled("  Esc        ", Style::default().fg(Color::Green)),
+            Span::styled("  Esc        ", Style::default().fg(theme.success)),
             Span::raw("Return to Normal mode"),
         ]),
         Line::from(vec![
-            Span::styled("  Enter      ", Style::default().fg(Color::Green)),
+            Span::styled("  Enter      ", Style::default().fg(theme.success)),
             Span::raw("Insert newline (Insert mode)"),
         ]),
         Line::from(vec![
-            Span::styled("  Ctrl+Enter ", Style::default().fg(Color::Green)),
+            Span::styled("  Ctrl+Enter ", Style::default().fg(theme.success)),
             Span::raw("Send message (Insert mode)"),
         ]),
         Line::from(vec![
-            Span::styled("  Ctrl+C     ", Style::default().fg(Color::Red)),
+            Span::styled("  Ctrl+C     ", Style::default().fg(theme.error)),
             Span::raw("Quit"),
         ]),
         Line::from(vec![
-            Span::styled("  j / PageDn ", Style::default().fg(Color::Cyan)),
+            Span::styled("  j / PageDn ", Style::default().fg(theme.accent)),
             Span::raw("Scroll conversation down (unpins auto-scroll)"),
         ]),
         Line::from(vec![
-            Span::styled("  k / PageUp ", Style::default().fg(Color::Cyan)),
+            Span::styled("  k / PageUp ", Style::default().fg(theme.accent)),
             Span::raw("Scroll conversation up (unpins auto-scroll)"),
         ]),
         Line::from(vec![
-            Span::styled("  G          ", Style::default().fg(Color::Cyan)),
+            Span::styled("  G          ", Style::default().fg(theme.accent)),
             Span::raw("Jump to bottom and re-pin auto-scroll"),
         ]),
         Line::from(vec![
-            Span::styled("  [ / ]      ", Style::default().fg(Color::Cyan)),
+            Span::styled("  [ / ]      ", Style::default().fg(theme.accent)),
             Span::raw("Select previous/next tool entry"),
         ]),
         Line::from(vec![
-            Span::styled("  e          ", Style::default().fg(Color::Cyan)),
+            Span::styled("  e          ", Style::default().fg(theme.accent)),
             Span::raw("Toggle expand selected tool entry"),
         ]),
         Line::from(vec![
-            Span::styled("  /help      ", Style::default().fg(Color::Cyan)),
+            Span::styled("  /help      ", Style::default().fg(theme.accent)),
             Span::raw("Show this help (type + Enter)"),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
             "  Press Esc to close",
-            Style::default().fg(Color::Gray),
+            Style::default().fg(theme.dim),
         )]),
     ];
 
@@ -368,7 +372,7 @@ fn render_help_overlay(frame: &mut Frame) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Help ")
-                .border_style(Style::default().fg(Color::Yellow)),
+                .border_style(Style::default().fg(theme.md_heading)),
         )
         .alignment(Alignment::Left);
 
@@ -426,45 +430,47 @@ mod tests {
         assert_eq!(input_box_height(&app), 8);
     }
 
-    /// AC-11: Code block lines must render with `bg(Color::Rgb(30, 30, 30)).fg(Color::White)`.
-    /// Header and footer lines must be Yellow; body lines have dark bg + white fg.
+    /// Code block header/footer lines use `theme.code_border`; body lines use
+    /// `theme.code_bg` / `theme.code_fg`.
     #[test]
     fn code_block_lines_have_dark_bg_style() {
         use crate::tui::{ChatBlock, ChatEntry};
 
+        let theme = Theme::default();
         let history = vec![ChatEntry::AssistantDone(vec![
             ChatBlock::Text("prose\n".to_string()),
             ChatBlock::Code { lang: "rust".to_string(), content: "fn main() {}\n".to_string() },
         ])];
-        let lines = chat_entries_to_lines(&history);
+        let lines = chat_entries_to_lines(&history, &theme);
 
         // lines[0] = "prose" — no background
         assert_eq!(lines[0].style, Style::default());
 
-        // lines[1] = header " ┌─ rust " — Yellow foreground
-        let header_style = Style::default().fg(Color::Yellow);
-        assert_eq!(lines[1].style, header_style, "header line must be Yellow");
+        // lines[1] = header " ┌─ rust " — code_border foreground
+        let header_style = Style::default().fg(theme.code_border);
+        assert_eq!(lines[1].style, header_style, "header line must use theme.code_border");
 
-        // lines[2] = code body — dark bg + white fg
-        let expected_style = Style::default().bg(Color::Rgb(30, 30, 30)).fg(Color::White);
-        assert_eq!(lines[2].style, expected_style, "code line must have dark background + white fg");
+        // lines[2] = code body — code_bg + code_fg
+        let expected_style = Style::default().bg(theme.code_bg).fg(theme.code_fg);
+        assert_eq!(lines[2].style, expected_style, "code line must use theme.code_bg + code_fg");
 
-        // lines[3] = footer " └────────" — Yellow foreground
-        assert_eq!(lines[3].style, header_style, "footer line must be Yellow");
+        // lines[3] = footer " └────────" — code_border foreground
+        assert_eq!(lines[3].style, header_style, "footer line must use theme.code_border");
     }
 
-    /// User entries render with a "[You]" header in Cyan bold followed by the text.
+    /// User entries render with a "[You]" header in `theme.accent` bold followed by the text.
     #[test]
     fn user_entry_renders_with_you_prefix() {
         use crate::tui::ChatEntry;
 
+        let theme = Theme::default();
         let history = vec![ChatEntry::User("hello".to_string())];
-        let lines = chat_entries_to_lines(&history);
+        let lines = chat_entries_to_lines(&history, &theme);
 
-        // First line should contain "[You]" in Cyan bold
+        // First line should contain "[You]" in accent bold
         let you_span = &lines[0].spans[0];
         assert_eq!(you_span.content, "[You]");
-        assert_eq!(you_span.style.fg, Some(Color::Cyan));
+        assert_eq!(you_span.style.fg, Some(theme.accent));
         assert!(you_span.style.add_modifier.contains(Modifier::BOLD));
 
         // Second line should be the user text
@@ -484,5 +490,21 @@ mod tests {
     fn status_bar_ctx_display_with_limit() {
         let s = format_ctx_segment(45200, Some(200000));
         assert!(s.contains("ctx: 45.2k/200k (23%)"), "got: {s}");
+    }
+
+    // ─── Theme tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn default_theme_is_rose_pine() {
+        use ratatui::style::Color;
+        let theme = Theme::default();
+        // iris = Rgb(196, 167, 231)
+        assert_eq!(theme.accent, Color::Rgb(196, 167, 231));
+        // overlay = Rgb(38, 35, 58)
+        assert_eq!(theme.status_bar_bg, Color::Rgb(38, 35, 58));
+        // foam = Rgb(156, 207, 216)
+        assert_eq!(theme.success, Color::Rgb(156, 207, 216));
+        // love = Rgb(235, 111, 146)
+        assert_eq!(theme.error, Color::Rgb(235, 111, 146));
     }
 }

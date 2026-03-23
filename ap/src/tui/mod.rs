@@ -25,7 +25,6 @@ use tokio::sync::mpsc;
 use crate::provider::Provider;
 use crate::tools::ToolRegistry;
 use crate::turn::turn;
-use crate::tui::Theme;
 use crate::types::{Conversation, Middleware, TurnEvent};
 use crate::context::maybe_compress_context;
 use crate::config::ContextConfig;
