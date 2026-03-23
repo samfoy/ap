@@ -111,7 +111,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Clippy pedantic pass: fix all warnings, document any intentional allows
     - Write architectural decision records (ADRs) for key design choices in docs/
 
-9. [ ] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
+9. [~] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
     - Slash command or @mention triggers ap in any channel or DM
     - Streaming responses posted as editable Slack messages (updated chunk by chunk)
     - Tool calls shown as threaded replies (collapsible)

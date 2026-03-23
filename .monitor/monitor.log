@@ -459,3 +459,5 @@ The gap is the entire feature — all 204 passing tests are pre-existing, none b
 [20:33:29] Review: **It did not land.** The Kiro provider goal produced zero Rust source code — no `kiro.rs`, no `kiro_transform.rs`, no auth module. The only Rust-adjacent change in the entire run is `ccc0ba2`'s `PROMPT.md`, which is a one-liner stub ("Now I have a thorough understanding of the codebase. Let me write the PROMPT.md:") — the monitor logged intent but never wrote implementation.
 
 **The gap is structural and recurring.** The monitor loop is conflating backlog state-tracking with delivery: it fires `chore(monitor): complete X` commits that flip a BACKLOG checkbox but leave `ap/src/provider/` completely untouched (`bedrock.rs` and `mod.rs` only, both from earlier work). The surrounding noise — backend flip-flopping between `ap` and `claude code` (`a3d5cc7` → `c910f4b`), idle-timeout tuning, and zsh shell fixes — are all monitor self-maintenance, not feature work. The Kiro spec in `BACKLOG.md` is detailed and correct, but none of it was ported from the TypeScript reference.
+[20:33:30] Starting: Slack bot integration
+[20:33:30] Starting: Slack bot integration
