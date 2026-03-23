@@ -201,7 +201,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - `--no-project-config` flag to skip project discovery
     - Reference: pi's global `~/.pi/agent/settings.json` + project `.pi/settings.json` pattern
 
-23. [ ] **Prompt templates** — Expandable markdown snippets invoked as `/name` commands:
+23. [~] **Prompt templates** — Expandable markdown snippets invoked as `/name` commands:
     - Locations: `~/.ap/prompts/*.md` (global), `.ap/prompts/*.md` (project)
     - Filename without `.md` becomes the command name (`review.md` → `/review`)
     - Frontmatter: optional `description` field; falls back to first non-empty line

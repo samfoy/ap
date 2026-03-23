@@ -298,3 +298,5 @@ The log is mismatched to the stated goal. The five meaningful commits (`0d09b36`
 [17:16:54] Review: The feature **did not land** — only the planning artifact (`PROMPT.md`) was committed. The `chore: init` commit is purely a spec document; there is no implementation in the Rust source. `ap/src/config.rs` still has the hardcoded `"ap.toml"` in the CWD and no `discover_project_config`, no `skip_project_config` flag, and no git-root walking. BACKLOG item 22 is correctly marked `[~]` (in-progress), which matches — the plan was written but the Ralph build loop that would execute it was never kicked off. No regression risk, but zero functional progress on the goal itself.
 [17:16:54] Merging feature/project-level-config into main...
 [17:16:54] Merged and cleaned up worktree for: Project-level config
+[17:16:56] Starting: Prompt templates
+[17:16:57] Created worktree: /Users/sam.painter/Projects/ap-worktrees/prompt-templates (feature/prompt-templates)
