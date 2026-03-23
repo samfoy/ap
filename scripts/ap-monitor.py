@@ -46,7 +46,7 @@ def log(msg):
 
 def run(cmd, cwd=None, **kwargs):
     return subprocess.run(
-        cmd, shell=True, capture_output=True, text=True,
+        ["zsh", "-l", "-c", cmd], capture_output=True, text=True,
         cwd=str(cwd or AP_DIR), **kwargs
     )
 
@@ -183,10 +183,10 @@ Include: vision, technical requirements with specific Rust types/signatures, ord
 End with: Output LOOP_COMPLETE when all acceptance criteria are met and the project builds clean.
 Output only the PROMPT.md content."""
 
+    ap_bin = str(AP_DIR / "ap" / "target" / "release" / "ap")
     r = subprocess.run(
-        [AP_DIR / "ap" / "target" / "release" / "ap",
-         "--prompt", context],
-        capture_output=True, text=True, env={**os.environ}, timeout=300
+        ["zsh", "-l", "-c", f"{ap_bin} --prompt {__import__('shlex').quote(context)}"],
+        capture_output=True, text=True, timeout=300
     )
     if r.returncode == 0 and r.stdout.strip():
         return r.stdout.strip()
@@ -202,11 +202,11 @@ Output only the PROMPT.md content."""
 def review(title):
     try:
         commits = run("git log --oneline -8").stdout.strip()
+        ap_bin = str(AP_DIR / "ap" / "target" / "release" / "ap")
+        review_prompt = f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"
         r = subprocess.run(
-            [AP_DIR / "ap" / "target" / "release" / "ap",
-             "--prompt",
-             f"Review this git log for the ap Rust project. Goal was: {title}\n\n{commits}\n\nIn 2-3 sentences: did it land cleanly? Any gaps?"],
-            capture_output=True, text=True, env={**os.environ}, timeout=60
+            ["zsh", "-l", "-c", f"{ap_bin} --prompt {__import__('shlex').quote(review_prompt)}"],
+            capture_output=True, text=True, timeout=60
         )
         return r.stdout.strip() if r.returncode == 0 else "(review unavailable)"
     except Exception as e:
