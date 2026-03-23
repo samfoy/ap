@@ -631,3 +631,5 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 [21:31:29] WARNING: Ralph may not have started for TUI overhaul — simple Claude Code / pi style UI
 [21:32:00] Starting: TUI overhaul — simple Claude Code / pi style UI
 [21:32:00] Starting: TUI overhaul — simple Claude Code / pi style UI
+[21:34:41] WARNING: Ralph may not have started for TUI overhaul — simple Claude Code / pi style UI
+[21:34:41] WARNING: Ralph may not have started for TUI overhaul — simple Claude Code / pi style UI

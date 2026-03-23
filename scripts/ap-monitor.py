@@ -182,7 +182,7 @@ def spawn_ralph(title):
     else:
         cmd = f"nohup ralph run --no-tui --backend ap --idle-timeout 300 -H builtin:pdd-to-code-assist >> {RALPH_LOG} 2>&1 &"
     run(cmd)
-    time.sleep(3)
+    time.sleep(10)
     if ralph_running():
         log(f"Ralph running for {title}")
         return True
@@ -361,9 +361,8 @@ def main():
                 git_commit(f"chore: init {current_title}")
                 git_push()
 
-                if not spawn_ralph(current_title):
-                    set_item_status(current_title, " ")
-                    current_title = None
+                spawn_ralph(current_title)
+                # Don't clear current_title on failed spawn — loop will retry ralph on next tick
 
         except Exception as e:
             log(f"Monitor error: {e}\n{traceback.format_exc()[:500]}")

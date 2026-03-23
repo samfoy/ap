@@ -14,4 +14,4 @@ _No events recorded._
 
 ## Final Commit
 
-a615d33: chore: init TUI overhaul — simple Claude Code / pi style UI
+b8fcc57: chore: init TUI overhaul — simple Claude Code / pi style UI

@@ -19,7 +19,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 > **Bootstrap goal:** ap builds ap. Critical path: Provider abstraction → AGENTS.md → Self-hosting. Everything else is secondary until the loop flips.
 
-0. [~] **TUI overhaul — simple Claude Code / pi style UI** — Current TUI is too busy and broken (Ctrl+Enter inserts newline instead of submitting). Replace with a clean, minimal chat UI:
+0. [ ] **TUI overhaul — simple Claude Code / pi style UI** — Current TUI is too busy and broken (Ctrl+Enter inserts newline instead of submitting). Replace with a clean, minimal chat UI:
     - **Input:** Single-line input bar at bottom (like pi/claude code). Enter submits. Shift+Enter or `\n` in input for newlines if needed. No multi-line editor widget.
     - **Chat area:** Scrollable message history above input. User messages right-aligned or prefixed `You:`, assistant left-aligned or prefixed `ap:`. Plain text rendering, no heavy layout.
     - **Status bar:** Single line at very top or bottom showing: model name, session name, token count. Nothing else.
