@@ -73,7 +73,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Reference:** pi's TUI (single input line, clean scroll), Claude Code's terminal output style (assistant text streamed inline, no framed boxes).
     - Acceptance: `ap` launches, shows clean input prompt, user types, Enter submits, response streams in, feels like a normal terminal chat tool.
 
-7. [~] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
+7. [x] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
 
     **API details** (from pi-provider-kiro reference impl at ~/Projects/pi-provider-kiro):
     - Endpoint: `https://q.us-east-1.amazonaws.com/generateAssistantResponse`

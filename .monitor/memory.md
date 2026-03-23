@@ -302,3 +302,15 @@ e4487f0 chore: init Provider abstraction
 1e273c9 chore(monitor): complete Session persistence in --prompt mode
 cd227c5 chore: init Session persistence in --prompt mode
 cf46ba6 fix(monitor): drop pdd-to-code-assist hat — use ap via Bedrock directly
+
+## 2026-03-22 20:33 — Kiro provider
+Review: **It did not land.** The Kiro provider goal produced zero Rust source code — no `kiro.rs`, no `kiro_transform.rs`, no auth module. The only Rust-adjacent change in the entire run is `ccc0ba2`'s `PROMPT.md`, which is a one-liner stub ("Now I have a thorough understanding of the codebase. Let me write the PROMPT.md:") — the monitor logged intent but never wrote implementation.
+
+**The gap is structural and recurring.** The monitor loop is conflating backlog state-tracking with delivery: it fires `chore(monitor): complete X` commits that flip a BACKLOG checkbox but leave `ap/src/provider/` completely untouched (`bedrock.rs` and `mod.rs` only, both from earlier work). The surrounding noise — backend flip-flopping between `ap` and `claude code` (`a3d5cc7` → `c910f4b`), idle-timeout tuning, and zsh shell fixes — are all monitor self-maintenance, not feature work. The Kiro spec in `BACKLOG.md` is detailed and correct, but none of it was ported from the TypeScript reference.
+Commits:
+ccc0ba2 chore: regenerate PROMPT.md for Kiro provider
+955da39 fix(monitor): use zsh login shell for all subprocess calls
+d5eef4e backlog: add TUI overhaul item — simple pi/claude-code style UI, fix Ctrl+Enter
+c910f4b fix(monitor): revert to ap backend (claude auth lapsed), keep idle-timeout 300s
+a3d5cc7 fix(monitor): switch backend to claude code, bump idle-timeout to 300s
+df2d149 chore(monitor): complete Model switching
