@@ -212,3 +212,17 @@ Commits:
 0beadea chore: strip ephemeral state before merge
 bd0de21 chore(monitor): start Robust file editing
 8d59311 chore: improve .gitignore — exclude target/, scratchpad, monitor state
+
+## 2026-03-22 17:14 — Pi/Agent Skills compatibility
+Review: The picture is clear. **No — it didn't land cleanly, and it didn't land at all.**
+
+The log is mismatched to the stated goal. The five meaningful commits (`0d09b36` → `330872d`) are the **Amazon toolchain integration** cycle (item 20), not Pi/Agent Skills (item 21). What actually happened: the monitor picked up Amazon toolchain as the next work item, ran its loop, and closed it out — item 21 was never touched. The only evidence of Skills work is the backlog entry itself being marked `[~]`, but there's no `src/` directory anywhere in the repo, which means **zero code exists** for either feature. `PROMPT.md` is just the spec for the Amazon toolchain loop.
+
+**The gap:** Pi/Agent Skills compatibility was the stated goal but the loop ran Amazon toolchain instead. Both are marked `[~]` (in-progress) in the backlog, but neither has implementation — only plans in PROMPT.md and BACKLOG.md.
+Commits:
+330872d chore(monitor): complete Amazon toolchain integration
+37caf43 feat: merge Amazon toolchain integration
+bd07468 chore: strip ephemeral state before merge
+bbd9d8e chore(monitor): start Amazon toolchain integration
+0d09b36 chore: init Amazon toolchain integration
+c93c9c7 chore(backlog): add items 22-24 — project config, prompt templates, retry backoff
