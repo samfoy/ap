@@ -1,1 +1,0 @@
-Now I have a thorough understanding of the entire codebase. Let me write the PROMPT.md.

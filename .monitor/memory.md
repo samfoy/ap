@@ -386,3 +386,15 @@ aa4ee20 chore: init LSP integration
 d7e8b1e chore(monitor): complete Semantic search over sessions + directories
 1d235c6 chore: init Semantic search over sessions + directories
 2b35afa chore(monitor): complete Streaming improvements
+
+## 2026-03-22 20:56 — Image support
+Review: Looking at the log, the Image support goal **did not land cleanly** — commit `8eea5b9` only shows an "init" for Image support with no corresponding "complete(monitor)" commit, meaning the feature was started but never finished or verified.
+
+The broader pattern in this log is consistent: every other feature has a paired `init` → `complete(monitor)` commit (Markdown/Mermaid, LSP, Semantic search, Streaming), but Image support is missing its closing commit, leaving it as an incomplete stub.
+Commits:
+8eea5b9 chore: init Image support
+8527d87 chore(monitor): complete Markdown + Mermaid rendering
+bfd88d1 chore: init Markdown + Mermaid rendering
+a3e43a5 chore(monitor): complete LSP integration
+aa4ee20 chore: init LSP integration
+d7e8b1e chore(monitor): complete Semantic search over sessions + directories

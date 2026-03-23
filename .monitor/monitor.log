@@ -533,3 +533,13 @@ The gap is the entire feature: there is no `chore(monitor): complete` counterpar
 The gap is the entire feature: there is no `chore(monitor): complete` counterpart commit in the log for this work, which means the monitor loop stalled after `init` and never spawned or completed a sub-agent execution. The `PROMPT.md` stub being a truncated sentence is the tell — the monitor wrote an incomplete thought and committed it as if it were a real spec.
 [20:53:23] Starting: Image support
 [20:53:23] Starting: Image support
+[20:55:40] Ralph running for Image support
+[20:55:40] Ralph running for Image support
+[20:56:10] LOOP_COMPLETE: Image support
+[20:56:10] LOOP_COMPLETE: Image support
+[20:56:15] Review: Looking at the log, the Image support goal **did not land cleanly** — commit `8eea5b9` only shows an "init" for Image support with no corresponding "complete(monitor)" commit, meaning the feature was started but never finished or verified.
+
+The broader pattern in this log is consistent: every other feature has a paired `init` → `complete(monitor)` commit (Markdown/Mermaid, LSP, Semantic search, Streaming), but Image support is missing its closing commit, leaving it as an incomplete stub.
+[20:56:15] Review: Looking at the log, the Image support goal **did not land cleanly** — commit `8eea5b9` only shows an "init" for Image support with no corresponding "complete(monitor)" commit, meaning the feature was started but never finished or verified.
+
+The broader pattern in this log is consistent: every other feature has a paired `init` → `complete(monitor)` commit (Markdown/Mermaid, LSP, Semantic search, Streaming), but Image support is missing its closing commit, leaving it as an incomplete stub.

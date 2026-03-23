@@ -155,7 +155,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 17. [x] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
 
-18. [~] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
+18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
 
 19. [ ] **Robust file editing** — Reliable, no-friction file edits by default:
