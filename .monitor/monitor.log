@@ -611,3 +611,9 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 [21:24:45] ap monitor started (direct-on-main mode)
 [21:24:45] Starting: Session management UX
 [21:24:45] Starting: Session management UX
+[21:25:46] ap monitor started (direct-on-main mode)
+[21:25:46] ap monitor started (direct-on-main mode)
+[21:25:46] Resuming in-progress item: Session management UX
+[21:25:46] Resuming in-progress item: Session management UX
+[21:25:46] PROMPT.md missing — regenerating for Session management UX
+[21:25:46] PROMPT.md missing — regenerating for Session management UX
