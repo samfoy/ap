@@ -1,8 +1,10 @@
 //! Session module — public interface.
 //!
-//! Re-exports [`Session`] and [`SessionStore`] for use across the crate.
+//! Re-exports [`Session`], [`SessionStore`], and [`SessionMeta`] for use across the crate.
 
 pub mod store;
+
+pub use store::SessionMeta;
 
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -53,7 +55,7 @@ impl Session {
 
 /// Format a Unix timestamp (seconds) as a simple ISO 8601 UTC string.
 /// e.g. `2026-03-22T14:00:00Z`
-fn format_unix_as_iso8601(secs: u64) -> String {
+pub(crate) fn format_unix_as_iso8601(secs: u64) -> String {
     // Julian Day Number algorithm for calendar conversion
     let days = secs / 86400;
     let time_of_day = secs % 86400;

@@ -23,6 +23,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::provider::Provider;
+use crate::session::store::SessionStore;
 use crate::tools::ToolRegistry;
 use crate::turn::turn;
 use crate::types::{Conversation, Middleware, TurnEvent};
@@ -294,12 +295,19 @@ pub struct TuiApp {
 
     /// Middleware chain (shared with spawned tasks).
     middleware: Arc<Middleware>,
+
+    /// Session name for persistence (None in headless/test mode).
+    session_name: Option<String>,
+
+    /// Session store for saving after each turn (None in headless/test mode).
+    store: Option<Arc<SessionStore>>,
 }
 
 impl TuiApp {
     /// Create a new [`TuiApp`].
     ///
     /// Call [`run`](TuiApp::run) to enter raw mode and start the event loop.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         conv: Arc<tokio::sync::Mutex<Conversation>>,
         provider: Arc<dyn Provider>,
@@ -307,6 +315,8 @@ impl TuiApp {
         middleware: Arc<Middleware>,
         model_name: String,
         context_limit: Option<u32>,
+        session_name: Option<String>,
+        store: Option<Arc<SessionStore>>,
     ) -> Result<Self> {
         let (ui_tx, ui_rx) = mpsc::channel(256);
         Ok(Self {
@@ -333,6 +343,8 @@ impl TuiApp {
             provider,
             tools,
             middleware,
+            session_name,
+            store,
         })
     }
 
@@ -393,6 +405,8 @@ impl TuiApp {
             provider: Arc::new(StubProvider),
             tools: Arc::new(ToolRegistry::new()),
             middleware: Arc::new(crate::types::Middleware::default()),
+            session_name: None,
+            store: None,
         }
     }
 
@@ -524,6 +538,10 @@ impl TuiApp {
             conv.unwrap_or(0.8)
         };
 
+        // Clone session fields for the spawned task
+        let session_name = self.session_name.clone();
+        let store = self.store.clone();
+
         tokio::spawn(async move {
             // Snapshot + append user message (pure, doesn't mutate Arc)
             let conv_with_msg = conv_arc.lock().await.clone().with_user_message(trimmed);
@@ -550,6 +568,13 @@ impl TuiApp {
                 Ok((new_conv, events)) => {
                     // Update shared conversation
                     *conv_arc.lock().await = new_conv;
+                    // Save session after each turn (if configured)
+                    if let (Some(name), Some(s)) = (&session_name, &store) {
+                        let conv: tokio::sync::MutexGuard<'_, Conversation> = conv_arc.lock().await;
+                        if let Err(e) = s.save(name, &conv) {
+                            eprintln!("Warning: failed to save session: {e}");
+                        }
+                    }
                     // Forward all events to the UI channel
                     for event in events {
                         let _ = tx.send(event).await;
@@ -1163,5 +1188,62 @@ mod tests {
         app.handle_submit("/help".to_string()).await;
         // show_help still exists as a legacy field but must not be set to true by /help
         assert!(!app.show_help, "/help must no longer set show_help");
+    }
+
+    // ─── Step 5: TuiApp session fields tests ─────────────────────────────────
+
+    #[test]
+    fn tuiapp_new_accepts_session_params() {
+        use crate::config::AppConfig;
+        use crate::session::store::SessionStore;
+        use crate::types::Middleware;
+        use crate::tools::ToolRegistry;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let store = SessionStore::with_base(tmp.path().to_path_buf());
+
+        struct StubProvider;
+        impl crate::provider::Provider for StubProvider {
+            fn stream_completion<'a>(
+                &'a self,
+                _messages: &'a [crate::provider::Message],
+                _tools: &'a [serde_json::Value],
+                _system_prompt: Option<&'a str>,
+            ) -> futures::stream::BoxStream<'a, Result<crate::provider::StreamEvent, crate::provider::ProviderError>> {
+                Box::pin(futures::stream::empty())
+            }
+        }
+
+        let conv = Arc::new(tokio::sync::Mutex::new(Conversation::new(
+            "test-id", "test-model", AppConfig::default(),
+        )));
+
+        let app = TuiApp::new(
+            conv,
+            Arc::new(StubProvider),
+            Arc::new(ToolRegistry::new()),
+            Arc::new(Middleware::default()),
+            "test-model".to_string(),
+            None,
+            Some("bold-pine".to_string()),
+            Some(Arc::new(store)),
+        ).unwrap();
+
+        assert_eq!(app.session_name.as_deref(), Some("bold-pine"));
+        assert!(app.store.is_some());
+    }
+
+    #[test]
+    fn headless_has_no_session_fields() {
+        let app = TuiApp::headless();
+        assert!(app.session_name.is_none(), "headless() should have no session_name");
+        assert!(app.store.is_none(), "headless() should have no store");
+    }
+
+    #[test]
+    fn headless_with_limit_has_no_session_fields() {
+        let app = TuiApp::headless_with_limit(Some(50_000));
+        assert!(app.session_name.is_none(), "headless_with_limit() should have no session_name");
+        assert!(app.store.is_none(), "headless_with_limit() should have no store");
     }
 }

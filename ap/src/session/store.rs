@@ -1,25 +1,73 @@
-//! `SessionStore` — save and load sessions from a configurable directory.
+//! `SessionStore` — save and load named sessions in JSONL-in-subdir format.
 //!
-//! Defaults to `~/.ap/sessions/<id>.json`. Tests inject a `PathBuf` via
-//! [`SessionStore::with_base`] so the real `save`/`load` code paths are
-//! exercised without writing to `$HOME`.
+//! Each session lives in `~/.ap/sessions/<name>/`:
+//! - `conversation.jsonl` — one `Message` JSON per line
+//! - `meta.json`          — `{ name, created_at, model }`
+//!
+//! Tests inject a `PathBuf` via [`SessionStore::with_base`] so the real code
+//! paths are exercised without touching `$HOME`.
 
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 
-use super::Session;
+use crate::provider::Message;
 use crate::types::Conversation;
+
+// ─── Word lists for generate_name() ──────────────────────────────────────────
+
+const ADJECTIVES: &[&str] = &[
+    "amber", "ancient", "arctic", "azure", "bold", "brave", "bright", "calm",
+    "clear", "cool", "crisp", "crystal", "dark", "deep", "deft", "distant",
+    "fair", "fast", "fierce", "free", "fresh", "frosted", "golden", "grand",
+    "great", "green", "grey", "high", "keen", "kind", "large", "late", "lean",
+    "light", "long", "loud", "low", "mild", "misty", "neat", "nimble", "noble",
+    "open", "plain", "pure", "quick", "quiet", "rare", "rich", "rough", "sharp",
+    "silent", "slim", "slow", "small", "soft", "still", "swift", "tall", "thin",
+    "true", "warm", "wide", "wild", "wise", "young",
+];
+
+const NOUNS: &[&str] = &[
+    "ash", "bay", "birch", "brook", "cave", "cedar", "cliff", "cloud", "creek",
+    "dawn", "dell", "dune", "dusk", "elm", "fern", "field", "fire", "fjord",
+    "ford", "glade", "glen", "grove", "hill", "isle", "lake", "leaf", "maple",
+    "mist", "moor", "moss", "oak", "peak", "pine", "pool", "rain", "reef",
+    "ridge", "rift", "rise", "river", "rock", "sage", "sand", "sea", "shade",
+    "shore", "sky", "snow", "star", "stem", "stone", "storm", "stream", "tide",
+    "tree", "vale", "vine", "wave", "wind",
+];
+
+// ─── On-disk meta.json representation ────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MetaOnDisk {
+    name: String,
+    created_at: String,
+    model: String,
+}
+
+// ─── Public SessionMeta struct ────────────────────────────────────────────────
+
+/// Public metadata about a saved session (returned by `list()`).
+#[derive(Debug, Clone)]
+pub struct SessionMeta {
+    pub name: String,
+    pub created_at: String,
+    pub model: String,
+    pub message_count: usize,
+}
 
 // ─── SessionStore ─────────────────────────────────────────────────────────────
 
-/// Saves and loads sessions from a directory on disk.
+/// Saves and loads named sessions from a directory on disk.
 ///
 /// Use [`SessionStore::new`] for the default `~/.ap/sessions/` location, or
 /// [`SessionStore::with_base`] to point at an arbitrary directory (e.g. a
 /// `tempdir` in tests).
 pub struct SessionStore {
-    /// Root directory where session JSON files are stored.
+    /// Root directory where per-session subdirectories are stored.
     pub base: PathBuf,
 }
 
@@ -37,61 +85,153 @@ impl SessionStore {
         Self { base }
     }
 
-    /// Returns the path for a given session id: `<base>/<id>.json`.
-    fn path_for(&self, id: &str) -> PathBuf {
-        self.base.join(format!("{id}.json"))
+    /// Returns the session directory path: `<base>/<name>/`.
+    fn session_dir(&self, name: &str) -> PathBuf {
+        self.base.join(name)
     }
 
-    /// Save a session to disk, creating the directory if necessary.
-    pub fn save(&self, session: &Session) -> Result<()> {
-        let path = self.path_for(&session.id);
-        // Create parent directory if it doesn't exist
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create sessions dir: {}", parent.display()))?;
+    /// Save a conversation to `<base>/<name>/conversation.jsonl` + `meta.json`.
+    ///
+    /// - The JSONL file is always rewritten with all messages (not append-only).
+    /// - `meta.json` is created once on the first save and never overwritten,
+    ///   preserving the original `created_at` timestamp.
+    pub fn save(&self, name: &str, conversation: &Conversation) -> Result<()> {
+        let dir = self.session_dir(name);
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create session dir: {}", dir.display()))?;
+
+        // Write conversation.jsonl (full rewrite)
+        let jsonl_path = dir.join("conversation.jsonl");
+        let mut lines = Vec::with_capacity(conversation.messages.len());
+        for msg in &conversation.messages {
+            let line = serde_json::to_string(msg)
+                .with_context(|| "failed to serialize message")?;
+            lines.push(line);
         }
-        let json = serde_json::to_string_pretty(session)
-            .context("failed to serialize session")?;
-        std::fs::write(&path, json)
-            .with_context(|| format!("failed to write session to {}", path.display()))?;
+        // Each line terminated by newline; empty file if no messages
+        let content = if lines.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", lines.join("\n"))
+        };
+        std::fs::write(&jsonl_path, content)
+            .with_context(|| format!("failed to write conversation.jsonl: {}", jsonl_path.display()))?;
+
+        // Write meta.json only on first save (idempotent — preserves created_at)
+        let meta_path = dir.join("meta.json");
+        if !meta_path.exists() {
+            let secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let meta = MetaOnDisk {
+                name: name.to_string(),
+                created_at: super::format_unix_as_iso8601(secs),
+                model: conversation.model.clone(),
+            };
+            let meta_json = serde_json::to_string_pretty(&meta)
+                .context("failed to serialize meta.json")?;
+            std::fs::write(&meta_path, meta_json)
+                .with_context(|| format!("failed to write meta.json: {}", meta_path.display()))?;
+        }
+
         Ok(())
     }
 
-    /// Load a session from disk. Returns `Err` if the file doesn't exist or is malformed.
-    pub fn load(&self, id: &str) -> Result<Session> {
-        let path = self.path_for(id);
-        let contents = std::fs::read_to_string(&path)
-            .with_context(|| format!("session file not found: {}", path.display()))?;
-        let session: Session = serde_json::from_str(&contents)
-            .with_context(|| format!("failed to parse session at {}", path.display()))?;
-        Ok(session)
-    }
-
-    /// Save a `Conversation` to disk as `<base>/<conv.id>.json`, creating the
-    /// directory if necessary.
-    pub fn save_conversation(&self, conv: &Conversation) -> Result<()> {
-        let path = self.path_for(&conv.id);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create sessions dir: {}", parent.display()))?;
+    /// Load messages from `<base>/<name>/conversation.jsonl`.
+    ///
+    /// Returns `Err` if the session directory or JSONL file does not exist.
+    pub fn load(&self, name: &str) -> Result<Vec<Message>> {
+        let jsonl_path = self.session_dir(name).join("conversation.jsonl");
+        if !jsonl_path.exists() {
+            bail!("session not found: {name}");
         }
-        let json = serde_json::to_string_pretty(conv)
-            .context("failed to serialize conversation")?;
-        std::fs::write(&path, json)
-            .with_context(|| format!("failed to write conversation to {}", path.display()))?;
-        Ok(())
+        let contents = std::fs::read_to_string(&jsonl_path)
+            .with_context(|| format!("failed to read conversation.jsonl for session: {name}"))?;
+        let mut messages = Vec::new();
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let msg: Message = serde_json::from_str(trimmed)
+                .with_context(|| format!("failed to parse message in session '{name}': {trimmed}"))?;
+            messages.push(msg);
+        }
+        Ok(messages)
     }
 
-    /// Load a `Conversation` from `<base>/<id>.json`. Returns `Err` if the
-    /// file doesn't exist or is malformed. Missing `config` field is tolerated
-    /// via `#[serde(default)]` on `Conversation`.
-    pub fn load_conversation(&self, id: &str) -> Result<Conversation> {
-        let path = self.path_for(id);
-        let contents = std::fs::read_to_string(&path)
-            .with_context(|| format!("conversation file not found: {id}"))?;
-        let conv: Conversation = serde_json::from_str(&contents)
-            .with_context(|| format!("failed to parse conversation at {}", path.display()))?;
-        Ok(conv)
+    /// List all sessions in `<base>/`.
+    ///
+    /// Returns an empty `Vec` if the base directory does not exist. Skips
+    /// any session directories that cannot be parsed (logs a warning to stderr).
+    /// Results are sorted by `created_at` descending (newest first).
+    pub fn list(&self) -> Result<Vec<SessionMeta>> {
+        if !self.base.exists() {
+            return Ok(Vec::new());
+        }
+        let read_dir = std::fs::read_dir(&self.base)
+            .with_context(|| format!("failed to read sessions dir: {}", self.base.display()))?;
+
+        let mut sessions = Vec::new();
+        for entry in read_dir {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("Warning: failed to read session dir entry: {e}");
+                    continue;
+                }
+            };
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let meta_path = path.join("meta.json");
+            let meta: MetaOnDisk = match std::fs::read_to_string(&meta_path) {
+                Ok(s) => match serde_json::from_str(&s) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: failed to parse meta.json at {}: {e}",
+                            meta_path.display()
+                        );
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "Warning: failed to read meta.json at {}: {e}",
+                        meta_path.display()
+                    );
+                    continue;
+                }
+            };
+            // Count lines in conversation.jsonl for message_count
+            let jsonl_path = path.join("conversation.jsonl");
+            let message_count = std::fs::read_to_string(&jsonl_path)
+                .map_or(0, |s| s.lines().filter(|l| !l.trim().is_empty()).count());
+            sessions.push(SessionMeta {
+                name: meta.name,
+                created_at: meta.created_at,
+                model: meta.model,
+                message_count,
+            });
+        }
+
+        // Sort by created_at descending (ISO 8601 sorts lexicographically)
+        sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(sessions)
+    }
+
+    /// Generate a random `adjective-noun` session name.
+    ///
+    /// Uses UUID v4 bytes for randomness — no `rand` crate required.
+    pub fn generate_name() -> String {
+        let bytes = uuid::Uuid::new_v4();
+        let b = bytes.as_bytes();
+        let adj_idx = b[0] as usize % ADJECTIVES.len();
+        let noun_idx = b[1] as usize % NOUNS.len();
+        format!("{}-{}", ADJECTIVES[adj_idx], NOUNS[noun_idx])
     }
 }
 
@@ -101,139 +241,185 @@ impl SessionStore {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::provider::Message;
+    use crate::config::AppConfig;
+    use crate::provider::{Message, MessageContent, Role};
 
-    // ── test_save_and_load_via_store ──────────────────────────────────────────
-    // AC: When SessionStore::save(&session) then SessionStore::load("test-session")
-    // are called, the data round-trips correctly.
-
-    #[test]
-    fn test_save_and_load_via_store() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = SessionStore::with_base(tmp.path().to_path_buf());
-
-        let mut session = Session::new("test-session".to_string(), "claude".to_string());
-        session.messages.push(Message::user("hello"));
-
-        store.save(&session).expect("save failed");
-        let loaded = store.load("test-session").expect("load failed");
-
-        assert_eq!(loaded.id, "test-session");
-        assert_eq!(loaded.model, "claude");
-        assert_eq!(loaded.messages.len(), 1);
+    /// Build a `Conversation` with `n` alternating user/assistant messages.
+    fn make_conv(model: &str, n: usize) -> Conversation {
+        let mut conv = Conversation::new("test-id", model, AppConfig::default());
+        for i in 0..n {
+            if i % 2 == 0 {
+                conv.messages.push(Message::user(format!("user message {i}")));
+            } else {
+                conv.messages.push(Message::assistant(format!("assistant message {i}")));
+            }
+        }
+        conv
     }
 
-    // ── test_missing_dir_created_by_save ─────────────────────────────────────
-    // AC: SessionStore::save creates parent directories automatically.
+    // ── test_missing_dir_created_on_save ─────────────────────────────────────
+    // AC: save creates <base>/<name>/ directory automatically.
 
     #[test]
-    fn test_missing_dir_created_by_save() {
+    fn test_missing_dir_created_on_save() {
         let tmp = tempfile::tempdir().unwrap();
-        let nested = tmp.path().join("nested").join("sessions");
-        // Confirm the directory does NOT exist yet
-        assert!(!nested.exists(), "pre-condition: dir should not exist");
+        let store = SessionStore::with_base(tmp.path().to_path_buf());
+        let conv = make_conv("claude", 1);
 
-        let store = SessionStore::with_base(nested.clone());
-        let session = Session::new("foo".to_string(), "claude".to_string());
-        store.save(&session).expect("save should create dirs");
+        store.save("new-sess", &conv).expect("save should succeed");
 
-        assert!(nested.exists(), "directory should have been created");
-        assert!(nested.join("foo.json").exists(), "file should have been written");
+        let sess_dir = tmp.path().join("new-sess");
+        assert!(sess_dir.exists(), "session directory should have been created");
+        assert!(sess_dir.is_dir(), "session path should be a directory");
+    }
+
+    // ── test_save_and_load_roundtrip ──────────────────────────────────────────
+    // AC: save(name, &conv) then load(name) returns the same messages.
+
+    #[test]
+    fn test_save_and_load_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = SessionStore::with_base(tmp.path().to_path_buf());
+        let conv = make_conv("claude-3-5-sonnet", 2);
+
+        store.save("test-session", &conv).expect("save failed");
+        let loaded = store.load("test-session").expect("load failed");
+
+        assert_eq!(loaded.len(), 2, "should have 2 messages");
+        // Check roles
+        assert_eq!(loaded[0].role, Role::User);
+        assert_eq!(loaded[1].role, Role::Assistant);
+        // Check content
+        match &loaded[0].content[0] {
+            MessageContent::Text { text } => assert_eq!(text, "user message 0"),
+            _ => panic!("expected text content"),
+        }
+        match &loaded[1].content[0] {
+            MessageContent::Text { text } => assert_eq!(text, "assistant message 1"),
+            _ => panic!("expected text content"),
+        }
+    }
+
+    // ── test_save_creates_meta_json ───────────────────────────────────────────
+    // AC: First save creates meta.json with correct name and model.
+
+    #[test]
+    fn test_save_creates_meta_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = SessionStore::with_base(tmp.path().to_path_buf());
+        let conv = make_conv("claude-3-5-sonnet", 1);
+
+        store.save("swift-river", &conv).expect("save failed");
+
+        let meta_path = tmp.path().join("swift-river").join("meta.json");
+        assert!(meta_path.exists(), "meta.json should be created");
+
+        let meta_str = std::fs::read_to_string(&meta_path).unwrap();
+        let meta: MetaOnDisk = serde_json::from_str(&meta_str).expect("meta.json parse failed");
+        assert_eq!(meta.name, "swift-river");
+        assert_eq!(meta.model, "claude-3-5-sonnet");
+        assert!(!meta.created_at.is_empty(), "created_at should be set");
+    }
+
+    // ── test_save_meta_json_idempotent ────────────────────────────────────────
+    // AC: Second save does not overwrite meta.json (created_at preserved).
+
+    #[test]
+    fn test_save_meta_json_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = SessionStore::with_base(tmp.path().to_path_buf());
+        let conv = make_conv("claude", 1);
+
+        store.save("bold-pine", &conv).expect("first save failed");
+
+        let meta_path = tmp.path().join("bold-pine").join("meta.json");
+        let meta_before: MetaOnDisk = serde_json::from_str(
+            &std::fs::read_to_string(&meta_path).unwrap()
+        ).unwrap();
+
+        // Second save with more messages
+        let conv2 = make_conv("claude", 3);
+        store.save("bold-pine", &conv2).expect("second save failed");
+
+        let meta_after: MetaOnDisk = serde_json::from_str(
+            &std::fs::read_to_string(&meta_path).unwrap()
+        ).unwrap();
+
+        assert_eq!(
+            meta_before.created_at, meta_after.created_at,
+            "created_at must not change on second save"
+        );
     }
 
     // ── test_load_nonexistent_returns_error ───────────────────────────────────
-    // AC: SessionStore::load returns a descriptive Err for a missing session.
+    // AC: load("no-such") returns descriptive Err.
 
     #[test]
     fn test_load_nonexistent_returns_error() {
         let tmp = tempfile::tempdir().unwrap();
         let store = SessionStore::with_base(tmp.path().to_path_buf());
 
-        let result = store.load("nonexistent-xyz");
-        assert!(result.is_err(), "expected Err for missing session");
+        let result = store.load("no-such");
+        assert!(result.is_err(), "expected Err for nonexistent session");
 
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("nonexistent-xyz"),
-            "error message should contain session id, got: {err_msg}"
+            err_msg.contains("no-such"),
+            "error should mention the session name, got: {err_msg}"
         );
     }
 
-    // ── test_save_and_load_conversation_roundtrip ─────────────────────────────
-    // AC1: Conversation round-trips through save_conversation / load_conversation.
+    // ── test_list_returns_all_sessions ────────────────────────────────────────
+    // AC: After saving 2 sessions, list() returns 2 SessionMeta entries.
 
     #[test]
-    fn test_save_and_load_conversation_roundtrip() {
-        use crate::config::AppConfig;
-        use crate::types::Conversation;
-
+    fn test_list_returns_all_sessions() {
         let tmp = tempfile::tempdir().unwrap();
         let store = SessionStore::with_base(tmp.path().to_path_buf());
 
-        let conv = Conversation::new("test-conv", "claude", AppConfig::default())
-            .with_user_message("hello there");
+        store.save("session-a", &make_conv("claude", 1)).expect("save a failed");
+        store.save("session-b", &make_conv("claude", 2)).expect("save b failed");
 
-        store.save_conversation(&conv).expect("save_conversation failed");
-        let loaded = store.load_conversation("test-conv").expect("load_conversation failed");
+        let sessions = store.list().expect("list failed");
+        assert_eq!(sessions.len(), 2, "should list 2 sessions");
 
-        assert_eq!(loaded.id, "test-conv");
-        assert_eq!(loaded.model, "claude");
-        assert_eq!(loaded.messages.len(), 1);
+        let names: Vec<&str> = sessions.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"session-a"), "session-a should be listed");
+        assert!(names.contains(&"session-b"), "session-b should be listed");
     }
 
-    // ── test_save_conversation_creates_dir ───────────────────────────────────
-    // AC2: save_conversation creates parent directories automatically.
+    // ── test_list_message_count ───────────────────────────────────────────────
+    // AC: message_count in SessionMeta matches number of messages saved.
 
     #[test]
-    fn test_save_conversation_creates_dir() {
-        use crate::config::AppConfig;
-        use crate::types::Conversation;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let nested = tmp.path().join("nested").join("sessions");
-        assert!(!nested.exists(), "pre-condition: dir should not exist");
-
-        let store = SessionStore::with_base(nested.clone());
-        let conv = Conversation::new("bar", "claude", AppConfig::default());
-        store.save_conversation(&conv).expect("save should create dirs");
-
-        assert!(nested.exists(), "directory should have been created");
-        assert!(nested.join("bar.json").exists(), "file should have been written");
-    }
-
-    // ── test_load_conversation_missing_returns_error ──────────────────────────
-    // AC3: load_conversation returns descriptive Err for missing file.
-
-    #[test]
-    fn test_load_conversation_missing_returns_error() {
+    fn test_list_message_count() {
         let tmp = tempfile::tempdir().unwrap();
         let store = SessionStore::with_base(tmp.path().to_path_buf());
 
-        let result = store.load_conversation("no-such-id");
-        assert!(result.is_err(), "expected Err for missing conversation");
+        store.save("session-x", &make_conv("claude", 3)).expect("save failed");
 
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("no-such-id"),
-            "error message should contain the id, got: {err_msg}"
-        );
+        let sessions = store.list().expect("list failed");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].message_count, 3, "message_count should be 3");
     }
 
-    // ── test_load_conversation_tolerates_missing_config ───────────────────────
-    // AC5: load_conversation succeeds when config key is absent from JSON.
+    // ── test_generate_name_format ─────────────────────────────────────────────
+    // AC: generate_name() returns "word-word" matching ^[a-z]+-[a-z]+$
 
     #[test]
-    fn test_load_conversation_tolerates_missing_config() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = SessionStore::with_base(tmp.path().to_path_buf());
-
-        // Write raw JSON without a "config" key
-        let json = r#"{"id":"old-conv","model":"claude","messages":[]}"#;
-        std::fs::write(tmp.path().join("old-conv.json"), json).unwrap();
-
-        let result = store.load_conversation("old-conv");
-        assert!(result.is_ok(), "should tolerate missing config: {:?}", result.err());
-        let conv = result.unwrap();
-        assert_eq!(conv.id, "old-conv");
+    fn test_generate_name_format() {
+        for _ in 0..10 {
+            let name = SessionStore::generate_name();
+            let parts: Vec<&str> = name.split('-').collect();
+            assert_eq!(parts.len(), 2, "name should have exactly 2 parts: {name}");
+            assert!(
+                parts[0].chars().all(|c| c.is_ascii_lowercase()),
+                "adjective should be lowercase ascii: {name}"
+            );
+            assert!(
+                parts[1].chars().all(|c| c.is_ascii_lowercase()),
+                "noun should be lowercase ascii: {name}"
+            );
+        }
     }
 }

@@ -486,3 +486,13 @@ d25759f fix(ralph): use custom backend pointing to ap binary directly
 f9d808f fix(monitor): use zsh -il for login+interactive shell (loads .zshrc, gets CLAUDE_CODE_USE_BEDROCK)
 3961753 chore: init TUI overhaul — manual PROMPT.md
 9ddc052 fix(monitor): don't requeue on slow ralph startup, bump spawn wait to 10s
+
+## 2026-03-23 06:24 — Session management UX
+Review: **No, it did not land cleanly.** The session management UX item is still marked `[~]` (in-progress) in BACKLOG.md, and critically, **zero `ap/src/` files changed** across the entire run — the only real source work was the TUI overhaul in `ebfc73f` (the prior item), which snuck in right before this task started. The Session management UX commits are entirely bookkeeping/chore noise: PROMPT.md refreshes, monitor state files, a requeue, and an infra fix (preflight AWS credential check in `dd248b4`) that was needed just to keep the loop alive. **The gap is that the actual feature — auto-named sessions from turn 1, `--session` flag, `ap sessions` list, `ap --resume`** — has no implementation commits whatsoever.
+Commits:
+dd248b4 fix(monitor): preflight AWS credential check before spawning Ralph, retry on stale token
+d67c332 chore: clean PROMPT.md for Session management UX
+943dc9e chore: init Session management UX
+006a46e chore(monitor): requeue Session management UX (no src changes)
+b0c07d2 chore: init Session management UX
+ebfc73f chore(monitor): complete TUI overhaul — simple Claude Code / pi style UI

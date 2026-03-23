@@ -9,7 +9,7 @@ use ap::context::maybe_compress_context;
 use ap::discovery::discover;
 use ap::middleware::shell_hook_bridge;
 use ap::provider::BedrockProvider;
-use ap::session::{store::SessionStore, Session};
+use ap::session::store::SessionStore;
 use ap::skills::{skill_injection_middleware, SkillLoader};
 use ap::tools::{ShellTool, ToolRegistry};
 use ap::tui::TuiApp;
@@ -34,6 +34,10 @@ struct Args {
     /// Override the context limit (in tokens) from the config file
     #[arg(long)]
     context_limit: Option<u32>,
+
+    /// List saved sessions and exit
+    #[arg(long = "list-sessions")]
+    list_sessions: bool,
 }
 
 #[tokio::main]
@@ -47,34 +51,23 @@ async fn main() -> anyhow::Result<()> {
         config.context.limit = Some(limit);
     }
 
+    // --list-sessions: print all saved sessions and exit
+    if args.list_sessions {
+        let store = SessionStore::new()?;
+        let sessions = store.list()?;
+        for s in &sessions {
+            let date = s.created_at.get(..10).unwrap_or(&s.created_at);
+            println!("{:<30} {}  {} messages", s.name, date, s.message_count);
+        }
+        return Ok(());
+    }
+
     if let Some(prompt) = args.prompt {
         // Non-interactive (headless) mode — session handled inside run_headless
         run_headless(config, args.session, &prompt).await
     } else {
-        // Interactive TUI mode — load session here for the TUI path
-        let session: Option<Session> = match &args.session {
-            Some(id) => {
-                let store = SessionStore::new().unwrap_or_else(|e| {
-                    eprintln!("ap: warning: could not determine session dir: {e}");
-                    SessionStore::with_base(std::path::PathBuf::from(".ap/sessions"))
-                });
-                match store.load(id) {
-                    Ok(session) => {
-                        eprintln!(
-                            "ap: resuming session {id} ({} messages)",
-                            session.messages.len()
-                        );
-                        Some(session)
-                    }
-                    Err(e) => {
-                        eprintln!("ap: warning: could not load session '{id}': {e}");
-                        Some(Session::new(id.clone(), config.provider.model.clone()))
-                    }
-                }
-            }
-            None => None,
-        };
-        run_tui(config, session).await
+        // Interactive TUI mode — session init handled inside run_tui
+        run_tui(config, args.session).await
     }
 }
 
@@ -126,27 +119,39 @@ async fn run_headless(
         }
     };
 
-    // Set up session store (only when --session is given)
-    let store: Option<SessionStore> = session_id.as_ref().map(|_| {
-        SessionStore::new().unwrap_or_else(|e| {
-            eprintln!("ap: warning: could not determine session dir: {e}");
-            SessionStore::with_base(std::path::PathBuf::from(".ap/sessions"))
-        })
-    });
-
-    // Load or create the Conversation
-    let conv: Conversation = match (&session_id, &store) {
-        (Some(id), Some(s)) => match s.load_conversation(id) {
-            Ok(c) => {
-                eprintln!("ap: resuming session {id} ({} messages)", c.messages.len());
-                c
-            }
-            Err(_) => {
-                Conversation::new(id.clone(), config.provider.model.clone(), config.clone())
-            }
-        },
-        _ => Conversation::new("ephemeral", config.provider.model.clone(), config.clone()),
+    // Set up session store — always created; fall back to a local path on error
+    let store: Option<SessionStore> = match SessionStore::new() {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("ap: warning: could not initialise session store: {e}");
+            None
+        }
     };
+
+    // Resolve session name: use --session value or generate a fresh adjective-noun name
+    let session_name: String =
+        session_id.unwrap_or_else(SessionStore::generate_name);
+
+    // Load prior messages for this session (empty vec if new session or no store)
+    let prior_messages = store
+        .as_ref()
+        .and_then(|s| s.load(&session_name).ok())
+        .unwrap_or_default();
+    if !prior_messages.is_empty() {
+        eprintln!(
+            "ap: resuming session {} ({} messages)",
+            session_name,
+            prior_messages.len()
+        );
+    }
+
+    // Load or create the Conversation with prior history
+    let conv: Conversation = Conversation::new(
+        session_name.clone(),
+        config.provider.model.clone(),
+        config.clone(),
+    )
+    .with_messages(prior_messages);
 
     // Apply discovered system prompt additions
     let system_prompt: Option<String> = if discovery.system_prompt_additions.is_empty() {
@@ -201,11 +206,12 @@ async fn run_headless(
     // Route events to stdout/stderr; returns non-zero on error
     let exit_code = route_headless_events(&events);
 
-    // Save conversation if session was requested and turn succeeded
+    // Always save the session (if store is available and turn succeeded)
     if exit_code == 0 {
-        if let (Some(_id), Some(s)) = (&session_id, &store) {
-            if let Err(e) = s.save_conversation(&updated_conv) {
-                eprintln!("ap: warning: could not save session: {e}");
+        if let Some(s) = &store {
+            match s.save(&session_name, &updated_conv) {
+                Ok(()) => eprintln!("Session saved: {session_name}"),
+                Err(e) => eprintln!("ap: warning: could not save session: {e}"),
             }
         }
     }
@@ -246,8 +252,34 @@ fn route_headless_events(events: &[TurnEvent]) -> i32 {
     exit_code
 }
 
-async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result<()> {
-    // Build the Bedrock provider
+async fn run_tui(config: AppConfig, session_arg: Option<String>) -> anyhow::Result<()> {
+    // ── Session init ──────────────────────────────────────────────────────────
+    // Mirror the headless path: always create a store, resolve a name, load history.
+    let store: Option<SessionStore> = match SessionStore::new() {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("ap: warning: cannot initialise session store: {e}");
+            None
+        }
+    };
+
+    // Resolve session name: use --session value or generate a fresh adjective-noun name
+    let session_name: String = session_arg.unwrap_or_else(SessionStore::generate_name);
+
+    // Load prior messages for this session (empty vec if new or no store)
+    let prior_messages = store
+        .as_ref()
+        .and_then(|s| s.load(&session_name).ok())
+        .unwrap_or_default();
+    if !prior_messages.is_empty() {
+        eprintln!(
+            "ap: resuming session {} ({} messages)",
+            session_name,
+            prior_messages.len()
+        );
+    }
+
+    // ── Provider ──────────────────────────────────────────────────────────────
     let provider = match BedrockProvider::new(
         config.provider.model.clone(),
         config.provider.region.clone(),
@@ -261,7 +293,7 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
         }
     };
 
-    // Discover project tools and skill system prompts
+    // ── Discover project tools and skill system prompts ───────────────────────
     let project_root =
         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let discovery = discover(&project_root);
@@ -269,7 +301,7 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
         eprintln!("ap: {w}");
     }
 
-    // Build tools, middleware, and conversation
+    // ── Tools & middleware ────────────────────────────────────────────────────
     // ShellTools must be registered BEFORE Arc::new wrap
     let mut tools = ToolRegistry::with_defaults();
     for discovered in discovery.tools {
@@ -289,6 +321,7 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
     let middleware = Arc::new(middleware);
     let model_name = config.provider.model.clone();
 
+    // ── Initial conversation with loaded history ───────────────────────────────
     // Apply discovered system prompt additions
     let system_prompt: Option<String> = if discovery.system_prompt_additions.is_empty() {
         None
@@ -296,18 +329,29 @@ async fn run_tui(config: AppConfig, _session: Option<Session>) -> anyhow::Result
         Some(discovery.system_prompt_additions.join("\n\n"))
     };
     let base_conv = Conversation::new(
-        uuid::Uuid::new_v4().to_string(),
+        session_name.clone(),
         model_name.clone(),
         config.clone(),
-    );
+    )
+    .with_messages(prior_messages);
     let initial_conv = match system_prompt {
         Some(sp) => base_conv.with_system_prompt(sp),
         None => base_conv,
     };
     let conv = Arc::new(tokio::sync::Mutex::new(initial_conv));
 
-    // Build and run TUI
-    let mut app = TuiApp::new(conv, provider, tools, middleware, model_name, config.context.limit)?;
+    // ── Build and run TUI, passing session context for auto-save ─────────────
+    let store_arc = store.map(Arc::new);
+    let mut app = TuiApp::new(
+        conv,
+        provider,
+        tools,
+        middleware,
+        model_name,
+        config.context.limit,
+        Some(session_name),
+        store_arc,
+    )?;
     app.run().await
 }
 
