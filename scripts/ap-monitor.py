@@ -187,6 +187,27 @@ def check_aws_credentials(max_retries=3, retry_delay=10):
     return False
 
 
+def clear_stale_lock():
+    """Remove loop.lock if the owning PID is no longer alive."""
+    lock = AP_DIR / ".ralph" / "loop.lock"
+    if not lock.exists():
+        return
+    try:
+        data = json.loads(lock.read_text())
+        pid = int(data.get("pid", 0))
+        # Check if process is still alive
+        import signal
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            log(f"Removing stale loop.lock (dead PID {pid})")
+            lock.unlink(missing_ok=True)
+        except PermissionError:
+            pass  # Process exists but we can't signal it — leave lock alone
+    except Exception:
+        lock.unlink(missing_ok=True)
+
+
 def spawn_ralph(title):
     # Warm up AWS credentials before spawning
     check_aws_credentials()
@@ -289,6 +310,7 @@ def update_memory(title, review_text):
 
 def main():
     log("ap monitor started (direct-on-main mode)")
+    clear_stale_lock()
     check_aws_credentials()
 
     current_title = None
@@ -372,6 +394,7 @@ def main():
                         since_restart = (time.time() - last_restart_at) / 60
                         if stale_min > STALL_MINUTES and since_restart > STALL_MINUTES:
                             log(f"STALL detected for {current_title} ({stale_min:.0f}m) — restarting Ralph")
+                            clear_stale_lock()
                             spawn_ralph(current_title)
                             last_restart_at = time.time()
 
