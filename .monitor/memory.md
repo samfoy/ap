@@ -188,3 +188,15 @@ ad10615 chore(monitor): complete Conversation context management
 e88ee7b feat: merge Conversation context management
 0f2f05b chore: strip ephemeral state before merge
 6f210e4 chore: auto-commit before merge (loop primary)
+
+## 2026-03-22 17:08 — Robust file editing
+Review: **No, it didn't land.** The 8 commits in this log are the tail end of the *Conversation context management* feature (the merge, cleanup, and .gitignore housekeeping) — not Robust file editing. The Robust file editing work only reached `chore(monitor): start Robust file editing` (bd0de21), meaning the monitor initialized the task but the implementation loop never ran and no merge commit exists.
+
+The gap is straightforward: the goal and the log are mismatched. What landed here was context management; Robust file editing is still on the backlog, started but unmerged.
+Commits:
+8d59311 chore: improve .gitignore — exclude target/, scratchpad, monitor state
+17723e6 chore: add .gitignore, exclude log files
+463e47a chore: flip build loop to ap (self-hosting milestone)
+08e7dd1 chore(monitor): start Model switching
+ad10615 chore(monitor): complete Conversation context management
+e88ee7b feat: merge Conversation context management

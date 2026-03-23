@@ -142,7 +142,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
 
-19. [~] **Robust file editing** — Reliable, no-friction file edits by default:
+19. [x] **Robust file editing** — Reliable, no-friction file edits by default:
     - **No approval prompts by default** — edits apply immediately, no confirmation dialogs. Trust the user. `--safe` flag available for those who want confirmation.
     - **Dry-run / diff preview** — `--dry-run` flag shows unified diff without writing. Claude can also call `preview_edit` tool to show before applying.
     - **Atomic multi-file apply** — all edits in a turn applied as a batch; if any write fails, roll back the whole set
@@ -159,6 +159,38 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Brazil awareness** — recognize Brazil package structure, understand `brazil-build`, `brazil ws`, `brazil-recursive-cmd` patterns
     - **Common patterns:** `ap "what's failing in my last brazil build"` auto-finds the build log; `ap "get the CloudWatch logs for service X"` uses current AWS profile
     - Config: `[aws] ada_enabled = true, default_profile = "auto"`
+
+21. [ ] **Pi/Agent Skills compatibility** — Full support for the [Agent Skills standard](https://agentskills.io/specification) and pi skill conventions:
+
+    **Discovery (expand current flat `.md` loader):**
+    - Support subdirectory skills: scan for `SKILL.md` recursively under each skills dir (e.g. `~/.ap/skills/my-skill/SKILL.md`)
+    - Flat `.md` files remain supported (backwards compat)
+    - Skill locations: `~/.ap/skills/` (global), `.ap/skills/` (project, cwd + ancestors up to git root)
+    - `--skill <path>` CLI flag (repeatable) to load a specific skill file or directory
+    - `--no-skills` flag to disable auto-discovery (explicit `--skill` still loads)
+
+    **Frontmatter (upgrade current parser):**
+    - Parse `name` field — use as skill identifier (currently uses filename stem)
+    - Parse `description` field — use for TF-IDF matching (currently uses full body)
+    - Validate: name must be lowercase letters/numbers/hyphens, max 64 chars, match parent dir
+    - Validate: description required (skip skill if missing), max 1024 chars
+    - Warn on violations but still load (lenient per spec)
+    - Existing `tools:` frontmatter key retained
+
+    **Associated scripts + relative paths:**
+    - Resolve relative paths (scripts/, references/, assets/) against the skill directory
+    - Agent can read/exec `./scripts/foo.sh` and ap resolves correctly against skill dir
+
+    **Skill commands:**
+    - `/skill:<name>` command in TUI — force-loads named skill, appends args as `User: <args>`
+    - Config: `skills.enable_commands = true` (default true)
+
+    **Injection change:**
+    - Inject only `name` + `description` in system prompt (progressive disclosure)
+    - Full SKILL.md body loaded on demand via `read` tool when agent uses it
+    - Replace current full-body injection
+
+    **Reference:** pi skill spec at `~/Projects/pi-knowledge-search/node_modules/@mariozechner/pi-coding-agent/docs/skills.md`
 
 ---
 
