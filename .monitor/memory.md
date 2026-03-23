@@ -256,3 +256,13 @@ f507591 chore(monitor): complete Prompt templates
 ceb7e64 chore: strip ephemeral state before merge
 48c2f4d chore(monitor): start Prompt templates
 5c6b574 chore(monitor): start Prompt templates
+
+## 2026-03-22 19:32 — Model switching
+Review: Now I have a clear picture. The goal was **Model switching** but the session's work was entirely on **Retry with exponential backoff**. Let me confirm there's no model switching code at all.**No, it did not land.** The session worked on **Retry with exponential backoff** (backlog item 24) instead of the stated goal of **Model switching** (item 6) — and even the retry work didn't land: commit `16be289` explicitly reset items 22–24 back to incomplete, acknowledging they were spec-only with no implementation. The gap is total: zero model-switching code exists (`/model` TUI command, `--model` CLI flag, `models.json` recent-model history, and mid-session provider switching are all absent from `src/`), and the backlog correctly reflects item 6 as `[~]` in-progress but unimplemented.
+Commits:
+7fc110e fix(monitor): use --prompt flag, drop --provider/--model (config-driven now)
+2ed216d chore(monitor): rewrite to direct-on-main mode — no worktrees
+16be289 chore(backlog): reset items 22-24 to incomplete — spec only, no implementation landed
+37a8446 chore(monitor): complete Retry with exponential backoff
+f2ab7b1 feat: merge Retry with exponential backoff
+f990c45 chore: strip ephemeral state before merge

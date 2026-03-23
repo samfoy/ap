@@ -318,3 +318,58 @@ The log is mismatched to the stated goal. The five meaningful commits (`0d09b36`
 [17:22:36] Review: The feature **did not land** — `e784280` only committed a `PROMPT.md` spec file outlining the plan; no actual Rust code was written. There is zero implementation in `src/`: no `src/retry.rs`, no `RetryConfig`, no `ProviderError::RateLimited`, no `TurnEvent::Retrying`, and no TUI wiring. The loop appears to have initialised the task and then pivoted entirely to a different feature (Prompt templates), never returning to execute any of the six implementation steps. The gap is total — it's a spec with no code behind it.
 [17:22:36] Merging feature/retry-with-exponential-backoff into main...
 [17:22:36] Merged and cleaned up worktree for: Retry with exponential backoff
+[17:22:39] 🎉 All backlog items complete!
+[18:45:49] ap monitor started (sequential mode)
+[18:45:49] Resuming (from backlog): Model switching in /Users/sam.painter/Projects/ap-worktrees/model-switching
+[18:50:20] ♥ alive — active: ['Model switching']
+[18:55:21] ♥ alive — active: ['Model switching']
+[19:00:22] ♥ alive — active: ['Model switching']
+[19:05:23] ♥ alive — active: ['Model switching']
+[19:10:24] ♥ alive — active: ['Model switching']
+[19:15:26] ♥ alive — active: ['Model switching']
+[19:20:27] ♥ alive — active: ['Model switching']
+[19:25:28] ♥ alive — active: ['Model switching']
+[19:29:35] ap monitor started (direct-on-main mode)
+[19:29:35] Starting: Model switching
+[19:29:35] Prompt generation attempt 1 failed for 'Model switching': error: unexpected argument '--provider' found
+
+Usage: ap [OPTIONS]
+
+For more information, try '--help'.
+
+[19:29:45] Prompt generation attempt 2 failed for 'Model switching': error: unexpected argument '--provider' found
+
+Usage: ap [OPTIONS]
+
+For more information, try '--help'.
+
+[19:30:06] Prompt generation attempt 3 failed for 'Model switching': error: unexpected argument '--provider' found
+
+Usage: ap [OPTIONS]
+
+For more information, try '--help'.
+
+[19:30:06] Failed to generate prompt for Model switching — skipping
+[19:30:24] ap monitor started (direct-on-main mode)
+[19:30:24] Starting: Model switching
+[19:30:24] Prompt generation attempt 1 failed for 'Model switching': error: unexpected argument '--print' found
+
+  tip: a similar argument exists: '--prompt'
+
+Usage: ap --prompt <PROMPT>
+
+For more information, try '--help'.
+
+[19:30:34] Prompt generation attempt 2 failed for 'Model switching': error: unexpected argument '--print' found
+
+  tip: a similar argument exists: '--prompt'
+
+Usage: ap --prompt <PROMPT>
+
+For more information, try '--help'.
+
+[19:30:44] ap monitor started (direct-on-main mode)
+[19:30:44] Resuming in-progress item: Model switching
+[19:30:47] Ralph running for Model switching
+[19:31:17] LOOP_COMPLETE: Model switching
+[19:32:02] Review: Now I have a clear picture. The goal was **Model switching** but the session's work was entirely on **Retry with exponential backoff**. Let me confirm there's no model switching code at all.**No, it did not land.** The session worked on **Retry with exponential backoff** (backlog item 24) instead of the stated goal of **Model switching** (item 6) — and even the retry work didn't land: commit `16be289` explicitly reset items 22–24 back to incomplete, acknowledging they were spec-only with no implementation. The gap is total: zero model-switching code exists (`/model` TUI command, `--model` CLI flag, `models.json` recent-model history, and mid-session provider switching are all absent from `src/`), and the backlog correctly reflects item 6 as `[~]` in-progress but unimplemented.
