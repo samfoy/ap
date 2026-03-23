@@ -362,3 +362,15 @@ fec2e57 chore: init Streaming improvements
 c300ddf chore(monitor): complete Background process management + tmux sub-agents
 f8c1722 chore: init Background process management + tmux sub-agents
 1d4e53e chore(monitor): complete Slack bot integration
+
+## 2026-03-22 20:50 — LSP integration
+Review: Let me look at the repository to give you an informed answer.**No, it did not land.** The `chore: init LSP integration` commit (`aa4ee20`) is pure bookkeeping — it flips the BACKLOG item to `[~]`, appends monitor log lines, and writes a broken one-liner `PROMPT.md` stub (`"Now I have a thorough understanding of the codebase. Let me write the PROMPT.md:"`) that never completed. Zero Rust source files were touched: no `src/lsp/`, no `LspClient`, no `lsp` tool schema, nothing.
+
+The gap is the entire feature, and it fits a well-established pattern in this log: the monitor loop consistently conflates *acknowledging* a task (flipping `[ ]` → `[~]` and committing a stub) with *completing* it. The corresponding `chore(monitor): complete LSP integration` entry that exists earlier in the log was from a prior phantom-complete cycle, not real code. The PROMPT.md spec was never actually written, so there's nothing for a sub-agent to execute against even if one were spawned.
+Commits:
+aa4ee20 chore: init LSP integration
+d7e8b1e chore(monitor): complete Semantic search over sessions + directories
+1d235c6 chore: init Semantic search over sessions + directories
+2b35afa chore(monitor): complete Streaming improvements
+fec2e57 chore: init Streaming improvements
+c300ddf chore(monitor): complete Background process management + tmux sub-agents
