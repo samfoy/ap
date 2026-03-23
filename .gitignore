@@ -1,2 +1,14 @@
+# Rust build artifacts
+ap/target/
+
+# Logs
 *.log
 .monitor-ralph.log
+
+# Monitor runtime state (regenerated on each run)
+.monitor/state.json
+.monitor/monitor.log
+
+# Agent scratchpad (ephemeral working files from Ralph loops)
+.agents/scratchpad/
+
