@@ -583,3 +583,13 @@ The `init` commit only tickmarks the backlog item to `[~]` (in-progress), adds a
 The `init` commit only tickmarks the backlog item to `[~]` (in-progress), adds a stray `PROMPT.md` placeholder, and logs the start time — zero `src/` changes. Every prior feature in this log follows the `init → monitor: complete` pair pattern, but `Pi/Agent Skills compatibility` has only its `init`; the implementation (subdirectory skill discovery, frontmatter upgrades, `/skill:<name>` commands, progressive-disclosure injection, etc.) was never written or merged. The gap is the entire feature.
 [21:07:56] Starting: Prompt templates
 [21:07:56] Starting: Prompt templates
+[21:10:51] Ralph running for Prompt templates
+[21:10:51] Ralph running for Prompt templates
+[21:11:21] LOOP_COMPLETE: Prompt templates
+[21:11:21] LOOP_COMPLETE: Prompt templates
+[21:11:31] Review: **No, it did not land cleanly.** The goal commit `f31416f` (`chore: init Prompt templates`) is a dangling init — it only tickmarks the backlog item to `[~]` (in-progress) and drops a stub `PROMPT.md`; there are zero `src/` changes and no subsequent `chore(monitor): complete Prompt templates` commit to close the loop.
+
+Every other feature in this log follows a strict `init → monitor: complete` pair (and typically a `feat: merge` on top of that), but Prompt templates is missing its entire second half. The feature spec (global `~/.ap/prompts/*.md`, project `.ap/prompts/*.md`, `/name` slash-command expansion, frontmatter parsing) was never implemented or merged.
+[21:11:31] Review: **No, it did not land cleanly.** The goal commit `f31416f` (`chore: init Prompt templates`) is a dangling init — it only tickmarks the backlog item to `[~]` (in-progress) and drops a stub `PROMPT.md`; there are zero `src/` changes and no subsequent `chore(monitor): complete Prompt templates` commit to close the loop.
+
+Every other feature in this log follows a strict `init → monitor: complete` pair (and typically a `feat: merge` on top of that), but Prompt templates is missing its entire second half. The feature spec (global `~/.ap/prompts/*.md`, project `.ap/prompts/*.md`, `/name` slash-command expansion, frontmatter parsing) was never implemented or merged.

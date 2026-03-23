@@ -434,3 +434,15 @@ c82ea78 chore(monitor): complete Amazon toolchain integration
 f70b6f6 chore(monitor): complete Robust file editing
 dddceaf chore: init Robust file editing
 a618ee7 chore(monitor): complete Image support
+
+## 2026-03-22 21:11 — Prompt templates
+Review: **No, it did not land cleanly.** The goal commit `f31416f` (`chore: init Prompt templates`) is a dangling init — it only tickmarks the backlog item to `[~]` (in-progress) and drops a stub `PROMPT.md`; there are zero `src/` changes and no subsequent `chore(monitor): complete Prompt templates` commit to close the loop.
+
+Every other feature in this log follows a strict `init → monitor: complete` pair (and typically a `feat: merge` on top of that), but Prompt templates is missing its entire second half. The feature spec (global `~/.ap/prompts/*.md`, project `.ap/prompts/*.md`, `/name` slash-command expansion, frontmatter parsing) was never implemented or merged.
+Commits:
+f31416f chore: init Prompt templates
+e6a0257 chore(monitor): complete Pi/Agent Skills compatibility
+1094cf9 chore: init Pi/Agent Skills compatibility
+c82ea78 chore(monitor): complete Amazon toolchain integration
+2075d3f chore: init Amazon toolchain integration
+f70b6f6 chore(monitor): complete Robust file editing
