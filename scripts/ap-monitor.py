@@ -46,7 +46,7 @@ def log(msg):
 
 def run(cmd, cwd=None, **kwargs):
     return subprocess.run(
-        ["zsh", "-l", "-c", cmd], capture_output=True, text=True,
+        ["zsh", "-il", "-c", cmd], capture_output=True, text=True,
         cwd=str(cwd or AP_DIR), **kwargs
     )
 
@@ -178,9 +178,9 @@ def spawn_ralph(title):
 
     scratchpad = AP_DIR / ".ralph/agent/scratchpad.md"
     if scratchpad.exists():
-        cmd = f"nohup ralph run --no-tui --backend ap --idle-timeout 300 -H builtin:pdd-to-code-assist --continue >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup zsh -il -c 'ralph run --no-tui --backend ap --idle-timeout 300 -H builtin:pdd-to-code-assist --continue >> {RALPH_LOG} 2>&1' &"
     else:
-        cmd = f"nohup ralph run --no-tui --backend ap --idle-timeout 300 -H builtin:pdd-to-code-assist >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup zsh -il -c 'ralph run --no-tui --backend ap --idle-timeout 300 -H builtin:pdd-to-code-assist >> {RALPH_LOG} 2>&1' &"
     run(cmd)
     time.sleep(10)
     if ralph_running():
