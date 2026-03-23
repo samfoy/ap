@@ -398,3 +398,17 @@ bfd88d1 chore: init Markdown + Mermaid rendering
 a3e43a5 chore(monitor): complete LSP integration
 aa4ee20 chore: init LSP integration
 d7e8b1e chore(monitor): complete Semantic search over sessions + directories
+
+## 2026-03-22 20:59 — Robust file editing
+Review: Let me look at the repository to give you an informed answer.**Did not land cleanly — it's an init-only stub with no implementation.**
+
+`dddceaf` only rewrites `ap/PROMPT.md` (the spec document) and flips the BACKLOG item from `[ ]` to `[~]`; zero Rust source files were touched. The monitor log confirms `LOOP_COMPLETE` was emitted, but there is no paired `chore(monitor): complete Robust file editing` commit in the log, which is the consistent signal across this project that a sub-agent actually executed and verified the work.
+
+The gap is the entire feature: no `src/editing/mod.rs`, no `EditBatch`/`PendingWrite`/`ApplyResult` types, no `apply_batch`/`undo_last`, no `preview_edit` tool, no `--safe`/`--dry-run`/`--undo` CLI flags, and no `tests/file_editing.rs`. The PROMPT.md spec itself is well-formed (a good sign for the next run), but nothing it describes exists in the codebase yet.
+Commits:
+dddceaf chore: init Robust file editing
+a618ee7 chore(monitor): complete Image support
+8eea5b9 chore: init Image support
+8527d87 chore(monitor): complete Markdown + Mermaid rendering
+bfd88d1 chore: init Markdown + Mermaid rendering
+a3e43a5 chore(monitor): complete LSP integration
