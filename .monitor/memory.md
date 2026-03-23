@@ -338,3 +338,15 @@ f8c1722 chore: init Background process management + tmux sub-agents
 b2c0126 chore(monitor): complete Kiro provider
 ccc0ba2 chore: regenerate PROMPT.md for Kiro provider
 955da39 fix(monitor): use zsh login shell for all subprocess calls
+
+## 2026-03-22 20:43 — Streaming improvements
+Review: Let me look at the repository to give you an informed answer.**Clean init, but it only landed the prompt — not the code.** The final commit (`fec2e57`) marks Streaming improvements as `[~]` (in-progress) in the backlog and writes a detailed `ap/PROMPT.md` spec (R1–R10, 8 steps, 14 ACs), but there are zero changes to any `.rs` source files — no `turn_streaming()`, no `CancellationToken`, no `TurnEvent::Cancelled`, none of the actual implementation.
+
+The gap is that this is a `chore: init` commit, meaning the sub-agent session was kicked off but hasn't run yet. The work is fully specced and ready to execute, but the loop hasn't produced a `chore(monitor): complete Streaming improvements` counterpart commit, so the feature is still outstanding.
+Commits:
+fec2e57 chore: init Streaming improvements
+c300ddf chore(monitor): complete Background process management + tmux sub-agents
+f8c1722 chore: init Background process management + tmux sub-agents
+1d4e53e chore(monitor): complete Slack bot integration
+1241ad0 chore: init Slack bot integration
+b2c0126 chore(monitor): complete Kiro provider

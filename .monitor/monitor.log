@@ -485,3 +485,13 @@ The gap is the entire feature — all 204 passing tests are pre-existing, none b
 **The gap:** No background process execution, no `job_id` system, no jobs TUI panel, no tmux sub-agent wiring — the task never started at the implementation level. The broader pattern across this log is also worth flagging: the monitor is consistently conflating *acknowledging* a task (flipping `[ ]` → `[~]`) with *completing* it, which is the same failure mode seen in the Slack bot and Kiro provider cycles before this one.
 [20:40:05] Starting: Streaming improvements
 [20:40:05] Starting: Streaming improvements
+[20:42:22] Ralph running for Streaming improvements
+[20:42:22] Ralph running for Streaming improvements
+[20:42:52] LOOP_COMPLETE: Streaming improvements
+[20:42:52] LOOP_COMPLETE: Streaming improvements
+[20:43:15] Review: Let me look at the repository to give you an informed answer.**Clean init, but it only landed the prompt — not the code.** The final commit (`fec2e57`) marks Streaming improvements as `[~]` (in-progress) in the backlog and writes a detailed `ap/PROMPT.md` spec (R1–R10, 8 steps, 14 ACs), but there are zero changes to any `.rs` source files — no `turn_streaming()`, no `CancellationToken`, no `TurnEvent::Cancelled`, none of the actual implementation.
+
+The gap is that this is a `chore: init` commit, meaning the sub-agent session was kicked off but hasn't run yet. The work is fully specced and ready to execute, but the loop hasn't produced a `chore(monitor): complete Streaming improvements` counterpart commit, so the feature is still outstanding.
+[20:43:15] Review: Let me look at the repository to give you an informed answer.**Clean init, but it only landed the prompt — not the code.** The final commit (`fec2e57`) marks Streaming improvements as `[~]` (in-progress) in the backlog and writes a detailed `ap/PROMPT.md` spec (R1–R10, 8 steps, 14 ACs), but there are zero changes to any `.rs` source files — no `turn_streaming()`, no `CancellationToken`, no `TurnEvent::Cancelled`, none of the actual implementation.
+
+The gap is that this is a `chore: init` commit, meaning the sub-agent session was kicked off but hasn't run yet. The work is fully specced and ready to execute, but the loop hasn't produced a `chore(monitor): complete Streaming improvements` counterpart commit, so the feature is still outstanding.
