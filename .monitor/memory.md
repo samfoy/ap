@@ -226,3 +226,13 @@ bd07468 chore: strip ephemeral state before merge
 bbd9d8e chore(monitor): start Amazon toolchain integration
 0d09b36 chore: init Amazon toolchain integration
 c93c9c7 chore(backlog): add items 22-24 — project config, prompt templates, retry backoff
+
+## 2026-03-22 17:16 — Project-level config
+Review: The feature **did not land** — only the planning artifact (`PROMPT.md`) was committed. The `chore: init` commit is purely a spec document; there is no implementation in the Rust source. `ap/src/config.rs` still has the hardcoded `"ap.toml"` in the CWD and no `discover_project_config`, no `skip_project_config` flag, and no git-root walking. BACKLOG item 22 is correctly marked `[~]` (in-progress), which matches — the plan was written but the Ralph build loop that would execute it was never kicked off. No regression risk, but zero functional progress on the goal itself.
+Commits:
+c48e05b chore: init Project-level config
+0d4b3c8 chore(monitor): complete Pi/Agent Skills compatibility
+ed50cd9 feat: merge Pi/Agent Skills compatibility
+f796093 chore: strip ephemeral state before merge
+a9541d7 chore(monitor): start Pi/Agent Skills compatibility
+330872d chore(monitor): complete Amazon toolchain integration
