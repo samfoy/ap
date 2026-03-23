@@ -19,7 +19,16 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 > **Bootstrap goal:** ap builds ap. Critical path: Provider abstraction → AGENTS.md → Self-hosting. Everything else is secondary until the loop flips.
 
-0a. [ ] **Session persistence in --prompt mode** — `ap --prompt "..."` (non-interactive/headless) currently discards session history; it should save to `~/.ap/sessions/` just like interactive mode:
+0. [ ] **TUI overhaul — simple Claude Code / pi style UI** — Current TUI is too busy and broken (Ctrl+Enter inserts newline instead of submitting). Replace with a clean, minimal chat UI:
+    - **Input:** Single-line input bar at bottom (like pi/claude code). Enter submits. Shift+Enter or `\n` in input for newlines if needed. No multi-line editor widget.
+    - **Chat area:** Scrollable message history above input. User messages right-aligned or prefixed `You:`, assistant left-aligned or prefixed `ap:`. Plain text rendering, no heavy layout.
+    - **Status bar:** Single line at very top or bottom showing: model name, session name, token count. Nothing else.
+    - **Remove:** Split panes, tool call panels, busy sidebars, any layout complexity that isn't the chat + status bar.
+    - **Key bindings:** Enter = submit, Up/Down = scroll history, Ctrl+C = cancel/exit. That's it.
+    - **Reference:** pi's TUI (single input line, clean scroll), Claude Code's terminal output style (assistant text streamed inline, no framed boxes).
+    - Acceptance: `ap` launches, shows clean input prompt, user types, Enter submits, response streams in, feels like a normal terminal chat tool.
+
+1a. [ ] **Session persistence in --prompt mode** — `ap --prompt "..."` (non-interactive/headless) currently discards session history; it should save to `~/.ap/sessions/` just like interactive mode:
     - On startup in `--prompt` mode, create a named session (slug from prompt, e.g. `prompt-read-backlog-2026-03-22`) same as interactive
     - After turn completes, save session to `~/.ap/sessions/<name>.json`
     - `--session <name>` flag works in `--prompt` mode to explicitly name/resume a session
@@ -46,7 +55,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 4. [x] **Conversation context management** — Auto-summarize old messages when context window fills. `--context-limit` flag. Show context usage in TUI status bar.
 
-5. [ ] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
+5. [~] **Session management UX** — All sessions are named and persisted to disk from the first turn. No ephemeral/throwaway runs.
     - Every `ap` invocation creates a named session immediately — name auto-generated from first user message (short slug, e.g. `refactor-auth-module-2026-03-22`)
     - `--session <name>` to give an explicit name at startup
     - Sessions saved to `~/.ap/sessions/<name>.json` after every turn
@@ -64,14 +73,6 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Works across all providers (Bedrock, OpenAI-compat)
     - Recent models remembered in `~/.ap/models.json` for quick switching
 
-0. [ ] **TUI overhaul — simple Claude Code / pi style UI** — Current TUI is too busy and broken (Ctrl+Enter inserts newline instead of submitting). Replace with a clean, minimal chat UI:
-    - **Input:** Single-line input bar at bottom (like pi/claude code). Enter submits. Shift+Enter or `\n` in input for newlines if needed. No multi-line editor widget.
-    - **Chat area:** Scrollable message history above input. User messages right-aligned or prefixed `You:`, assistant left-aligned or prefixed `ap:`. Plain text rendering, no heavy layout.
-    - **Status bar:** Single line at very top or bottom showing: model name, session name, token count. Nothing else.
-    - **Remove:** Split panes, tool call panels, busy sidebars, any layout complexity that isn't the chat + status bar.
-    - **Key bindings:** Enter = submit, Up/Down = scroll history, Ctrl+C = cancel/exit. That's it.
-    - **Reference:** pi's TUI (single input line, clean scroll), Claude Code's terminal output style (assistant text streamed inline, no framed boxes).
-    - Acceptance: `ap` launches, shows clean input prompt, user types, Enter submits, response streams in, feels like a normal terminal chat tool.
 
 7. [ ] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
 

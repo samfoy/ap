@@ -607,3 +607,7 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry with exponential backoff is missing every step after the `init`. The feature was specced out but never implemented or merged — `e097ffc` is the tip of the branch, so it's simply an open work item frozen mid-flight.
 [21:15:00] 🎉 All backlog items complete!
 [21:15:00] 🎉 All backlog items complete!
+[21:24:45] ap monitor started (direct-on-main mode)
+[21:24:45] ap monitor started (direct-on-main mode)
+[21:24:45] Starting: Session management UX
+[21:24:45] Starting: Session management UX
