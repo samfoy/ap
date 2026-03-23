@@ -1,27 +1,28 @@
-Now I have a thorough understanding of the codebase. Let me write the PROMPT.md.The `PROMPT.md` has been written to `~/Projects/ap/ap/PROMPT.md` (340 lines, 18 KB). Here's a summary of what it contains:
+Now I have a thorough picture of the existing codebase. Let me write the detailed PROMPT.md:Here is the `PROMPT.md` content written to `~/Projects/ap/ap/PROMPT.md`:
 
 ---
 
-## What's in the PROMPT.md
+The prompt covers:
 
-### Vision
-Replace the broken, over-engineered 4-pane modal TUI with a 3-zone chat interface: **status bar → scrollable chat → single-line input**. No modes, no panels, no boxes.
+**Vision** — three-zone layout (status bar + chat area + input bar), no modal modes, no panes, feels like a normal terminal chat tool.
 
-### Technical Requirements
-- **Exact Rust types/signatures** for the new `TuiApp` (fields removed: `mode`, `selected_tool`, `show_help`), the new `Action` enum (adds `ScrollUp`, `ScrollDown`, `ScrollToBottom`), and the new pure render helpers (`chat_lines`, `status_text`, `render`).
-- **Key binding table** — Enter=submit, Up/Down=scroll, Ctrl+C=quit, Ctrl+L=bottom. No modal switching.
-- **Layout spec** — `Layout::vertical([Length(1), Min(1), Length(3)])`. No horizontal splits.
-- **Chat rendering rules** — `You: ` prefix in accent bold, `ap: ` prefix in success bold, tool entries as single inline dim annotations (`· tool: bash ✓`).
+**Guiding Principles** — functional-first, no AppMode, single vertical layout, all existing `handle_ui_event` tests preserved.
 
-### 5 Ordered Steps (each independently compilable)
-1. **Remove `AppMode`, simplify `TuiApp`** — delete modal fields, rewrite `events.rs` with no-modal bindings + new tests
-2. **Rewrite `ui.rs`** — new three-zone layout, `chat_lines()` and `status_text()` as pure testable functions
-3. **Wire scroll actions into event_loop** — connect the new `Action` variants, add scroll tests
-4. **Integration smoke tests** — `headless_new_ui_state`, `submit_clears_buffer`, `waiting_prevents_submit`
-5. **Final cleanup** — dead code, clippy, release build validation
+**Current State** — exact inventory of the four files being changed vs. the ones left untouched (`theme.rs`, `types.rs`, `turn.rs`, `main.rs`).
 
-### 11 Acceptance Criteria
-Covering: clean build, all tests pass, `AppMode` fully gone, `handle_key_event` behaviour verified, three-zone layout, pure helper functions with tests, fixed-height input bar, no help overlay code, zero new clippy warnings.
+**Types and Signatures** — exact Rust signatures for:
+- `Action` (6 variants, new `ScrollUp`/`ScrollDown`/`ScrollToBottom`)
+- `handle_key_event` with a precise key-binding table
+- `status_text(model, turns, last_input_tokens, context_limit) -> String`
+- `chat_lines<'a>(history, tool_entries, theme) -> Vec<Line<'a>>`
+- `render(frame, app)` with exact `Layout::vertical([Length(1), Min(1), Length(3)])` spec
 
-### Termination condition
-`LOOP_COMPLETE` when all 11 ACs are met and the project builds clean.
+**4 ordered steps**, each independently compilable:
+1. Strip `AppMode`/`selected_tool`/`show_help` from `TuiApp`; rewrite `events.rs` with 11 named tests
+2. Rewrite `ui.rs` with `status_text`, `chat_lines`, `render`; 9 named tests
+3. Wire scroll actions in `event_loop`; 5 integration tests
+4. Final cleanup — dead code, stale imports, `git diff` checks, clippy, grep checks
+
+**15 acceptance criteria** with exact grep commands to verify structural properties, named unit tests to verify behaviour, and `cargo build/test/clippy` gating the whole thing.
+
+**Ends with** the `LOOP_COMPLETE` instruction.
