@@ -64,6 +64,15 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Works across all providers (Bedrock, OpenAI-compat)
     - Recent models remembered in `~/.ap/models.json` for quick switching
 
+7b. [ ] **TUI overhaul — simple Claude Code / pi style UI** — Current TUI is too busy and broken (Ctrl+Enter inserts newline instead of submitting). Replace with a clean, minimal chat UI:
+    - **Input:** Single-line input bar at bottom (like pi/claude code). Enter submits. Shift+Enter or `\n` in input for newlines if needed. No multi-line editor widget.
+    - **Chat area:** Scrollable message history above input. User messages right-aligned or prefixed `You:`, assistant left-aligned or prefixed `ap:`. Plain text rendering, no heavy layout.
+    - **Status bar:** Single line at very top or bottom showing: model name, session name, token count. Nothing else.
+    - **Remove:** Split panes, tool call panels, busy sidebars, any layout complexity that isn't the chat + status bar.
+    - **Key bindings:** Enter = submit, Up/Down = scroll history, Ctrl+C = cancel/exit. That's it.
+    - **Reference:** pi's TUI (single input line, clean scroll), Claude Code's terminal output style (assistant text streamed inline, no framed boxes).
+    - Acceptance: `ap` launches, shows clean input prompt, user types, Enter submits, response streams in, feels like a normal terminal chat tool.
+
 7. [~] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
 
     **API details** (from pi-provider-kiro reference impl at ~/Projects/pi-provider-kiro):
