@@ -637,3 +637,55 @@ The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry
 [21:34:51] ap monitor started (direct-on-main mode)
 [21:34:51] Starting: TUI overhaul — simple Claude Code / pi style UI
 [21:34:51] Starting: TUI overhaul — simple Claude Code / pi style UI
+(anon):setopt:7: can't change option: monitor
+
+[[31mERROR[39m]: gitstatus failed to initialize.
+
+
+  Add the following parameter to ~/.zshrc for extra diagnostics on error:
+
+    GITSTATUS_LOG_LEVEL=DEBUG
+
+  Restart Zsh to retry gitstatus initialization:
+
+    [32mexec zsh[39m
+[22:07:14] ap monitor started (direct-on-main mode)
+[22:07:14] ap monitor started (direct-on-main mode)
+[22:07:14] Resuming in-progress item: TUI overhaul — simple Claude Code / pi style UI
+[22:07:14] Resuming in-progress item: TUI overhaul — simple Claude Code / pi style UI
+[22:11:44] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:11:44] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:16:45] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:16:45] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:21:45] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:21:45] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:26:46] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:26:46] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:31:47] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:31:47] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:36:47] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:36:47] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:41:48] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:41:48] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:46:48] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:46:48] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:51:49] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:51:49] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:56:49] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:56:49] ♥ alive — active: ['TUI overhaul — simple Claude Code / pi style UI']
+[22:57:19] LOOP_COMPLETE: TUI overhaul — simple Claude Code / pi style UI
+[22:57:19] LOOP_COMPLETE: TUI overhaul — simple Claude Code / pi style UI
+[22:58:03] Review: Let me look at the actual code to give you a grounded answer.Good — `AppMode` is defined but never referenced outside its own declaration. Let me check one more thing.Clean picture. Here's the verdict:
+
+---
+
+**It landed cleanly.** The core deliverable is done: `ui.rs` is a pure 3-zone renderer (`Length(1) / Fill(1) / Length(3)`) with no horizontal splits or tool-panel widget, `events.rs` has no modal dispatch, all tests pass green, and the binary builds. The plumbing fixes (zsh login shell for `CLAUDE_CODE_USE_BEDROCK`, spawn-wait bump, custom ralph backend pointing at the release binary) show the agent also got the execution environment sorted out rather than just writing code.
+
+**One gap worth noting:** `AppMode` (the old `Normal`/`Insert` enum) is still defined in `mod.rs` and `TuiApp` still carries a `mode` field — they're just dead code now. The PROMPT called for removing them outright; they were left as a stub. Not a functional problem, but it means the old modal scaffolding is still in the struct and will generate dead-code lint noise until cleaned up.
+[22:58:03] Review: Let me look at the actual code to give you a grounded answer.Good — `AppMode` is defined but never referenced outside its own declaration. Let me check one more thing.Clean picture. Here's the verdict:
+
+---
+
+**It landed cleanly.** The core deliverable is done: `ui.rs` is a pure 3-zone renderer (`Length(1) / Fill(1) / Length(3)`) with no horizontal splits or tool-panel widget, `events.rs` has no modal dispatch, all tests pass green, and the binary builds. The plumbing fixes (zsh login shell for `CLAUDE_CODE_USE_BEDROCK`, spawn-wait bump, custom ralph backend pointing at the release binary) show the agent also got the execution environment sorted out rather than just writing code.
+
+**One gap worth noting:** `AppMode` (the old `Normal`/`Insert` enum) is still defined in `mod.rs` and `TuiApp` still carries a `mode` field — they're just dead code now. The PROMPT called for removing them outright; they were left as a stub. Not a functional problem, but it means the old modal scaffolding is still in the struct and will generate dead-code lint noise until cleaned up.

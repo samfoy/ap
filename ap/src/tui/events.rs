@@ -1,11 +1,11 @@
-//! `tui/events.rs` — Keyboard event handling and mode state machine.
+//! `tui/events.rs` — Keyboard event handling (flat, always-active dispatch).
 //!
 //! Translates raw crossterm `KeyEvent`s into high-level [`Action`]s that
 //! the [`TuiApp`] event loop can act on.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::tui::{AppMode, TuiApp};
+use crate::tui::TuiApp;
 
 /// High-level action produced by a key event.
 #[derive(Debug, PartialEq)]
@@ -16,115 +16,66 @@ pub enum Action {
     Submit(String),
     /// The user requested a quit.
     Quit,
+    /// The user requested cancellation of the current in-progress turn.
+    Cancel,
 }
 
 /// Translate a single key event into an [`Action`], mutating `app` for
-/// immediate mode or scroll changes.
+/// immediate buffer or scroll changes.
+///
+/// All keys are always-active (no modal dispatch). The `is_waiting` guard
+/// lives here: Enter is ignored when a turn is in progress. `handle_submit`
+/// does **not** check `is_waiting` itself, keeping it directly callable from
+/// tests.
 pub fn handle_key_event(key: KeyEvent, app: &mut TuiApp) -> Action {
-    // Dismiss help overlay with any key that doesn't conflict, or Esc.
-    if app.show_help {
-        if key.code == KeyCode::Esc
-            || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
-        {
-            if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                return Action::Quit;
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+    match key.code {
+        // Ctrl+C → Cancel if waiting, Quit if idle
+        KeyCode::Char('c') if ctrl => {
+            if app.is_waiting {
+                Action::Cancel
+            } else {
+                Action::Quit
             }
-            app.show_help = false;
         }
-        return Action::None;
-    }
 
-    match app.mode {
-        AppMode::Normal => match (key.code, key.modifiers) {
-            // Quit
-            (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => Action::Quit,
-            // Enter insert mode
-            (KeyCode::Char('i'), _) | (KeyCode::Enter, _) => {
-                app.mode = AppMode::Insert;
+        // Enter → Submit if buffer non-empty and not waiting, else None
+        KeyCode::Enter => {
+            if !app.is_waiting && !app.input_buffer.is_empty() {
+                Action::Submit(app.input_buffer.drain(..).collect())
+            } else {
                 Action::None
             }
-            // Scroll down — unpin auto-scroll
-            (KeyCode::Char('j'), _) | (KeyCode::PageDown, _) => {
-                app.scroll_pinned = false;
-                app.scroll_offset = app.scroll_offset.saturating_add(3);
-                Action::None
-            }
-            // Scroll up — unpin auto-scroll
-            (KeyCode::Char('k'), _) | (KeyCode::PageUp, _) => {
-                app.scroll_pinned = false;
-                app.scroll_offset = app.scroll_offset.saturating_sub(3);
-                Action::None
-            }
-            // Jump to bottom and re-pin auto-scroll
-            (KeyCode::Char('G'), _) => {
-                app.scroll_pinned = true;
-                app.scroll_offset = usize::MAX;
-                Action::None
-            }
-            // Esc in normal mode: hide help (belt-and-suspenders)
-            (KeyCode::Esc, _) => {
-                app.show_help = false;
-                Action::None
-            }
-            // Tool panel navigation: ] selects next, [ selects previous
-            (KeyCode::Char(']'), _) => {
-                let len = app.tool_entries.len();
-                if len > 0 {
-                    app.selected_tool =
-                        Some(app.selected_tool.map_or(0, |i| (i + 1).min(len - 1)));
-                }
-                Action::None
-            }
-            (KeyCode::Char('['), _) => {
-                let len = app.tool_entries.len();
-                if len > 0 {
-                    app.selected_tool =
-                        Some(app.selected_tool.map_or(0, |i| i.saturating_sub(1)));
-                }
-                Action::None
-            }
-            // Toggle expansion of the selected tool entry
-            (KeyCode::Char('e'), _) => {
-                if let Some(idx) = app.selected_tool {
-                    if let Some(entry) = app.tool_entries.get_mut(idx) {
-                        entry.expanded = !entry.expanded;
-                    }
-                }
-                Action::None
-            }
-            _ => Action::None,
-        },
+        }
 
-        AppMode::Insert => match (key.code, key.modifiers) {
-            // Quit
-            (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => Action::Quit,
-            // Return to normal mode
-            (KeyCode::Esc, _) => {
-                app.mode = AppMode::Normal;
-                Action::None
-            }
-            // Submit input
-            (KeyCode::Enter, m) if m.contains(KeyModifiers::CONTROL) => {
-                let input: String = app.input_buffer.drain(..).collect();
-                Action::Submit(input)
-            }
-            // Insert newline
-            (KeyCode::Enter, _) => {
-                app.input_buffer.push('\n');
-                Action::None
-            }
-            // Delete last character
-            (KeyCode::Backspace, _) => {
-                app.input_buffer.pop();
-                Action::None
-            }
-            // Append character
-            (KeyCode::Char(c), _) => {
-                app.input_buffer.push(c);
-                Action::None
-            }
-            _ => Action::None,
-        },
+        // Up arrow → scroll up by 3, unpin
+        KeyCode::Up => {
+            app.scroll_pinned = false;
+            app.scroll_offset = app.scroll_offset.saturating_sub(3);
+            Action::None
+        }
+
+        // Down arrow → scroll down by 3, unpin
+        KeyCode::Down => {
+            app.scroll_pinned = false;
+            app.scroll_offset = app.scroll_offset.saturating_add(3);
+            Action::None
+        }
+
+        // Backspace → remove last char from buffer
+        KeyCode::Backspace => {
+            app.input_buffer.pop();
+            Action::None
+        }
+
+        // Any other character → append to buffer
+        KeyCode::Char(c) => {
+            app.input_buffer.push(c);
+            Action::None
+        }
+
+        _ => Action::None,
     }
 }
 
@@ -147,102 +98,161 @@ mod tests {
         TuiApp::headless()
     }
 
-    #[test]
-    fn normal_mode_i_enters_insert() {
-        let mut app = make_app();
-        assert_eq!(app.mode, AppMode::Normal);
-        let action = handle_key_event(key(KeyCode::Char('i')), &mut app);
-        assert_eq!(action, Action::None);
-        assert_eq!(app.mode, AppMode::Insert);
-    }
+    // ── 1. Enter with non-empty buffer submits ────────────────────────────────
 
     #[test]
-    fn insert_mode_esc_returns_normal() {
+    fn enter_with_non_empty_buffer_submits() {
         let mut app = make_app();
-        app.mode = AppMode::Insert;
-        let action = handle_key_event(key(KeyCode::Esc), &mut app);
-        assert_eq!(action, Action::None);
-        assert_eq!(app.mode, AppMode::Normal);
-    }
-
-    #[test]
-    fn insert_mode_enter_adds_newline() {
-        let mut app = make_app();
-        app.mode = AppMode::Insert;
         app.input_buffer = "hello".to_string();
+        app.is_waiting = false;
         let action = handle_key_event(key(KeyCode::Enter), &mut app);
-        assert_eq!(action, Action::None);
-        assert_eq!(app.input_buffer, "hello\n");
+        assert_eq!(action, Action::Submit("hello".to_string()));
     }
 
+    // ── 2. Enter clears the buffer ────────────────────────────────────────────
+
     #[test]
-    fn insert_mode_ctrl_enter_submits() {
+    fn enter_clears_the_buffer() {
         let mut app = make_app();
-        app.mode = AppMode::Insert;
-        app.input_buffer = "hello\nworld".to_string();
-        let action = handle_key_event(ctrl(KeyCode::Enter), &mut app);
-        assert_eq!(action, Action::Submit("hello\nworld".to_string()));
+        app.input_buffer = "hello".to_string();
+        app.is_waiting = false;
+        handle_key_event(key(KeyCode::Enter), &mut app);
         assert!(app.input_buffer.is_empty(), "buffer should be cleared after submit");
     }
 
-    #[test]
-    fn ctrl_c_quits_in_normal_mode() {
-        let mut app = make_app();
-        let action = handle_key_event(ctrl(KeyCode::Char('c')), &mut app);
-        assert_eq!(action, Action::Quit);
-    }
+    // ── 3. Enter with empty buffer returns None ───────────────────────────────
 
     #[test]
-    fn ctrl_c_quits_in_insert_mode() {
+    fn enter_with_empty_buffer_returns_none() {
         let mut app = make_app();
-        app.mode = AppMode::Insert;
-        let action = handle_key_event(ctrl(KeyCode::Char('c')), &mut app);
-        assert_eq!(action, Action::Quit);
+        app.input_buffer = String::new();
+        app.is_waiting = false;
+        let action = handle_key_event(key(KeyCode::Enter), &mut app);
+        assert_eq!(action, Action::None);
     }
 
-    #[test]
-    fn normal_mode_scroll_j_increments_offset() {
-        let mut app = make_app();
-        handle_key_event(key(KeyCode::Char('j')), &mut app);
-        assert_eq!(app.scroll_offset, 3);
-        assert!(!app.scroll_pinned, "j should unpin auto-scroll");
-    }
+    // ── 4. Enter when waiting returns None ───────────────────────────────────
 
     #[test]
-    fn normal_mode_scroll_k_decrements_offset() {
+    fn enter_when_waiting_returns_none() {
         let mut app = make_app();
-        app.scroll_offset = 6;
-        handle_key_event(key(KeyCode::Char('k')), &mut app);
-        assert_eq!(app.scroll_offset, 3);
-        assert!(!app.scroll_pinned, "k should unpin auto-scroll");
+        app.input_buffer = "hello".to_string();
+        app.is_waiting = true;
+        let action = handle_key_event(key(KeyCode::Enter), &mut app);
+        assert_eq!(action, Action::None);
+        // Buffer must NOT be drained
+        assert_eq!(app.input_buffer, "hello", "buffer must not be drained when waiting");
     }
 
-    #[test]
-    fn normal_mode_g_repins_and_jumps_to_bottom() {
-        let mut app = make_app();
-        // Start unpinned at some arbitrary offset
-        app.scroll_pinned = false;
-        app.scroll_offset = 42;
-        handle_key_event(key(KeyCode::Char('G')), &mut app);
-        assert_eq!(app.scroll_offset, usize::MAX, "G should set offset to usize::MAX");
-        assert!(app.scroll_pinned, "G should re-pin auto-scroll");
-    }
+    // ── 5. Char appended to buffer ────────────────────────────────────────────
 
     #[test]
-    fn insert_mode_backspace_removes_last_char() {
+    fn char_appended_to_buffer() {
         let mut app = make_app();
-        app.mode = AppMode::Insert;
+        handle_key_event(key(KeyCode::Char('x')), &mut app);
+        assert_eq!(app.input_buffer, "x");
+    }
+
+    // ── 6. Multiple chars build the buffer ───────────────────────────────────
+
+    #[test]
+    fn multiple_chars_build_buffer() {
+        let mut app = make_app();
+        handle_key_event(key(KeyCode::Char('a')), &mut app);
+        handle_key_event(key(KeyCode::Char('b')), &mut app);
+        handle_key_event(key(KeyCode::Char('c')), &mut app);
+        assert_eq!(app.input_buffer, "abc");
+    }
+
+    // ── 7. Backspace removes last char ───────────────────────────────────────
+
+    #[test]
+    fn backspace_removes_last_char() {
+        let mut app = make_app();
         app.input_buffer = "abc".to_string();
-        handle_key_event(key(KeyCode::Backspace), &mut app);
+        let action = handle_key_event(key(KeyCode::Backspace), &mut app);
+        assert_eq!(action, Action::None);
         assert_eq!(app.input_buffer, "ab");
     }
 
+    // ── 8. Backspace on empty buffer is noop ─────────────────────────────────
+
     #[test]
-    fn help_overlay_dismissed_by_esc() {
+    fn backspace_on_empty_buffer_is_noop() {
         let mut app = make_app();
-        app.show_help = true;
-        let action = handle_key_event(key(KeyCode::Esc), &mut app);
+        // Should not panic
+        let action = handle_key_event(key(KeyCode::Backspace), &mut app);
         assert_eq!(action, Action::None);
-        assert!(!app.show_help);
+        assert!(app.input_buffer.is_empty());
+    }
+
+    // ── 9. Ctrl+C when idle returns Quit ─────────────────────────────────────
+
+    #[test]
+    fn ctrl_c_when_idle_returns_quit() {
+        let mut app = make_app();
+        app.is_waiting = false;
+        let action = handle_key_event(ctrl(KeyCode::Char('c')), &mut app);
+        assert_eq!(action, Action::Quit);
+    }
+
+    // ── 10. Ctrl+C when waiting returns Cancel ───────────────────────────────
+
+    #[test]
+    fn ctrl_c_when_waiting_returns_cancel() {
+        let mut app = make_app();
+        app.is_waiting = true;
+        let action = handle_key_event(ctrl(KeyCode::Char('c')), &mut app);
+        assert_eq!(action, Action::Cancel);
+    }
+
+    // ── 11. Up arrow decrements scroll offset ────────────────────────────────
+
+    #[test]
+    fn up_arrow_decrements_scroll_offset() {
+        let mut app = make_app();
+        app.scroll_offset = 9;
+        handle_key_event(key(KeyCode::Up), &mut app);
+        assert_eq!(app.scroll_offset, 6);
+    }
+
+    // ── 12. Up arrow unpins autoscroll ───────────────────────────────────────
+
+    #[test]
+    fn up_arrow_unpins_autoscroll() {
+        let mut app = make_app();
+        app.scroll_pinned = true;
+        handle_key_event(key(KeyCode::Up), &mut app);
+        assert!(!app.scroll_pinned);
+    }
+
+    // ── 13. Up arrow at zero clamps to zero ──────────────────────────────────
+
+    #[test]
+    fn up_arrow_at_zero_clamps_to_zero() {
+        let mut app = make_app();
+        app.scroll_offset = 1;
+        handle_key_event(key(KeyCode::Up), &mut app);
+        assert_eq!(app.scroll_offset, 0);
+    }
+
+    // ── 14. Down arrow increments scroll offset ──────────────────────────────
+
+    #[test]
+    fn down_arrow_increments_scroll_offset() {
+        let mut app = make_app();
+        app.scroll_offset = 6;
+        handle_key_event(key(KeyCode::Down), &mut app);
+        assert_eq!(app.scroll_offset, 9);
+    }
+
+    // ── 15. Down arrow unpins autoscroll ─────────────────────────────────────
+
+    #[test]
+    fn down_arrow_unpins_autoscroll() {
+        let mut app = make_app();
+        app.scroll_pinned = true;
+        handle_key_event(key(KeyCode::Down), &mut app);
+        assert!(!app.scroll_pinned);
     }
 }

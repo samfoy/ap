@@ -458,3 +458,19 @@ f31416f chore: init Prompt templates
 e6a0257 chore(monitor): complete Pi/Agent Skills compatibility
 1094cf9 chore: init Pi/Agent Skills compatibility
 c82ea78 chore(monitor): complete Amazon toolchain integration
+
+## 2026-03-22 22:58 — TUI overhaul — simple Claude Code / pi style UI
+Review: Let me look at the actual code to give you a grounded answer.Good — `AppMode` is defined but never referenced outside its own declaration. Let me check one more thing.Clean picture. Here's the verdict:
+
+---
+
+**It landed cleanly.** The core deliverable is done: `ui.rs` is a pure 3-zone renderer (`Length(1) / Fill(1) / Length(3)`) with no horizontal splits or tool-panel widget, `events.rs` has no modal dispatch, all tests pass green, and the binary builds. The plumbing fixes (zsh login shell for `CLAUDE_CODE_USE_BEDROCK`, spawn-wait bump, custom ralph backend pointing at the release binary) show the agent also got the execution environment sorted out rather than just writing code.
+
+**One gap worth noting:** `AppMode` (the old `Normal`/`Insert` enum) is still defined in `mod.rs` and `TuiApp` still carries a `mode` field — they're just dead code now. The PROMPT called for removing them outright; they were left as a stub. Not a functional problem, but it means the old modal scaffolding is still in the struct and will generate dead-code lint noise until cleaned up.
+Commits:
+d25759f fix(ralph): use custom backend pointing to ap binary directly
+f9d808f fix(monitor): use zsh -il for login+interactive shell (loads .zshrc, gets CLAUDE_CODE_USE_BEDROCK)
+3961753 chore: init TUI overhaul — manual PROMPT.md
+9ddc052 fix(monitor): don't requeue on slow ralph startup, bump spawn wait to 10s
+b8fcc57 chore: init TUI overhaul — simple Claude Code / pi style UI
+a615d33 chore: init TUI overhaul — simple Claude Code / pi style UI

@@ -20,7 +20,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::provider::Provider;
 use crate::tools::ToolRegistry;
@@ -62,6 +62,15 @@ pub enum ChatEntry {
     AssistantStreaming(String),
     /// Assistant message that has finished streaming — parsed into blocks.
     AssistantDone(Vec<ChatBlock>),
+    /// A tool call shown inline in the chat history.
+    ToolCall {
+        /// Tool name (e.g. `"bash"`, `"read"`).
+        name: String,
+        /// Current execution status.
+        status: ToolStatus,
+        /// Truncated error output when `status == Error`; `None` for success.
+        output_snippet: Option<String>,
+    },
 }
 
 /// Parse a raw text string into a sequence of [`ChatBlock`]s by scanning for
@@ -132,6 +141,58 @@ pub enum AppMode {
     Normal,
     /// Typing mode — characters go to the input buffer.
     Insert,
+}
+
+// ─── ToolStatus ───────────────────────────────────────────────────────────────
+
+/// Status of a tool call rendered inline in the chat history.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToolStatus {
+    /// Tool is currently executing.
+    Running,
+    /// Tool completed successfully.
+    Done,
+    /// Tool completed with an error.
+    Error,
+}
+
+// ─── Snippet truncation ───────────────────────────────────────────────────────
+
+/// Maximum character count for an error snippet shown in a [`ChatEntry::ToolCall`].
+pub const MAX_SNIPPET_CHARS: usize = 300;
+
+/// Maximum line count for an error snippet shown in a [`ChatEntry::ToolCall`].
+pub const MAX_SNIPPET_LINES: usize = 5;
+
+/// Truncate a string to at most [`MAX_SNIPPET_CHARS`] characters and
+/// [`MAX_SNIPPET_LINES`] lines, appending `…` when truncated.
+pub fn truncate_snippet(s: &str) -> String {
+    // Apply line limit first
+    let line_limited: String = {
+        let mut lines = s.lines();
+        let mut kept = Vec::new();
+        for _ in 0..MAX_SNIPPET_LINES {
+            match lines.next() {
+                Some(l) => kept.push(l),
+                None => break,
+            }
+        }
+        let truncated_by_lines = lines.next().is_some();
+        let joined = kept.join("\n");
+        if truncated_by_lines {
+            format!("{joined}…")
+        } else {
+            joined
+        }
+    };
+
+    // Apply char limit
+    if line_limited.chars().count() > MAX_SNIPPET_CHARS {
+        let truncated: String = line_limited.chars().take(MAX_SNIPPET_CHARS).collect();
+        format!("{truncated}…")
+    } else {
+        line_limited
+    }
 }
 
 // ─── ToolEntry ────────────────────────────────────────────────────────────────
@@ -218,6 +279,10 @@ pub struct TuiApp {
     /// Receiver side of the UI event channel.
     ui_rx: Option<mpsc::Receiver<TurnEvent>>,
 
+    /// Abort sender — `Some` while a turn is in progress, `None` when idle.
+    /// Sending on this channel signals the turn task to cancel.
+    pub abort_tx: Option<oneshot::Sender<()>>,
+
     /// Shared conversation state — updated by the spawned turn task.
     conv: Arc<tokio::sync::Mutex<Conversation>>,
 
@@ -263,6 +328,7 @@ impl TuiApp {
             context_limit,
             ui_tx,
             ui_rx: Some(ui_rx),
+            abort_tx: None,
             conv,
             provider,
             tools,
@@ -322,6 +388,7 @@ impl TuiApp {
             context_limit,
             ui_tx,
             ui_rx: Some(ui_rx),
+            abort_tx: None,
             conv,
             provider: Arc::new(StubProvider),
             tools: Arc::new(ToolRegistry::new()),
@@ -382,6 +449,9 @@ impl TuiApp {
                                 events::Action::Submit(input) => {
                                     self.handle_submit(input).await;
                                 }
+                                events::Action::Cancel => {
+                                    self.handle_cancel();
+                                }
                                 events::Action::None => {}
                             }
                         }
@@ -409,6 +479,18 @@ impl TuiApp {
 
     // ─── Private helpers ─────────────────────────────────────────────────────
 
+    /// Cancel the current in-progress turn by draining `abort_tx`.
+    ///
+    /// If `abort_tx` is `Some`, the sender is consumed via `take()` and `()`
+    /// is sent on the channel to signal cancellation.  If `abort_tx` is
+    /// `None` (no turn in progress) this is a no-op.
+    fn handle_cancel(&mut self) {
+        if let Some(tx) = self.abort_tx.take() {
+            let _ = tx.send(());
+        }
+        // turn() doesn't support cancellation yet — no further action needed
+    }
+
     /// Handle a submitted input line.
     async fn handle_submit(&mut self, input: String) {
         let trimmed = input.trim().to_string();
@@ -416,14 +498,14 @@ impl TuiApp {
             return;
         }
 
-        if trimmed == "/help" {
-            self.show_help = true;
-            return;
-        }
-
         // Echo the user message into the conversation pane
         self.chat_history.push(ChatEntry::User(trimmed.clone()));
         self.is_waiting = true;
+
+        // Store abort sender for potential cancellation (abort_rx discarded
+        // until turn() supports cancellation in a future step)
+        let (abort_tx, _abort_rx) = oneshot::channel::<()>();
+        self.abort_tx = Some(abort_tx);
 
         // Clone Arc handles for the spawned task
         let conv_arc = Arc::clone(&self.conv);
@@ -497,6 +579,13 @@ impl TuiApp {
             }
             TurnEvent::ToolStart { name, params } => {
                 let params_str = params.to_string();
+                // NEW: push inline ToolCall into chat history
+                self.chat_history.push(ChatEntry::ToolCall {
+                    name: name.clone(),
+                    status: ToolStatus::Running,
+                    output_snippet: None,
+                });
+                // LEGACY: keep tool_entries for existing events.rs / ui.rs
                 self.tool_entries.push(ToolEntry {
                     name,
                     params: params_str,
@@ -512,7 +601,21 @@ impl TuiApp {
                 }
             }
             TurnEvent::ToolComplete { name, result, is_error } => {
-                // Fill result on the last matching entry with result=None
+                // NEW: find and update matching ToolCall in chat_history
+                if let Some(ChatEntry::ToolCall { status, output_snippet, .. }) = self
+                    .chat_history
+                    .iter_mut()
+                    .rev()
+                    .find(|e| matches!(e, ChatEntry::ToolCall { name: n, status: ToolStatus::Running, .. } if n == &name))
+                {
+                    *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
+                    *output_snippet = if is_error {
+                        Some(truncate_snippet(&result))
+                    } else {
+                        None
+                    };
+                }
+                // LEGACY: keep tool_entries for existing events.rs / ui.rs
                 if let Some(entry) = self
                     .tool_entries
                     .iter_mut()
@@ -585,17 +688,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn headless_app_starts_in_normal_mode() {
+    fn headless_app_initial_state() {
         let app = TuiApp::headless();
-        assert_eq!(app.mode, AppMode::Normal);
         assert!(app.chat_history.is_empty());
-        assert!(app.tool_entries.is_empty());
-        assert!(app.selected_tool.is_none());
         assert!(app.input_buffer.is_empty());
         assert_eq!(app.scroll_offset, 0);
         assert!(app.scroll_pinned);
-        assert!(!app.show_help);
         assert!(!app.is_waiting);
+        // abort_tx starts as None (no in-progress turn)
+        assert!(app.abort_tx.is_none());
     }
 
     #[test]
@@ -611,36 +712,110 @@ mod tests {
         );
     }
 
+    // ─── New ToolStatus / ChatEntry::ToolCall tests ───────────────────────────
+
     #[test]
-    fn handle_ui_event_tool_start_logged() {
+    fn tool_status_variants_derive_debug_clone_partialeq() {
+        let a = ToolStatus::Running;
+        let b = a.clone();
+        assert_eq!(a, b);
+        assert_eq!(format!("{:?}", ToolStatus::Done), "Done");
+        assert_ne!(ToolStatus::Running, ToolStatus::Error);
+    }
+
+    #[test]
+    fn chat_entry_tool_call_variant_can_be_pushed_and_matched() {
+        let mut v: Vec<ChatEntry> = Vec::new();
+        v.push(ChatEntry::ToolCall {
+            name: "bash".to_string(),
+            status: ToolStatus::Running,
+            output_snippet: None,
+        });
+        assert_eq!(v.len(), 1);
+        match &v[0] {
+            ChatEntry::ToolCall { name, status, output_snippet } => {
+                assert_eq!(name, "bash");
+                assert_eq!(*status, ToolStatus::Running);
+                assert!(output_snippet.is_none());
+            }
+            _ => panic!("expected ToolCall variant"),
+        }
+    }
+
+    #[test]
+    fn tuiapp_headless_has_abort_tx_none() {
+        let app = TuiApp::headless();
+        assert!(app.abort_tx.is_none());
+    }
+
+    #[test]
+    fn truncate_snippet_respects_char_limit() {
+        let long_str: String = "a".repeat(400);
+        let result = truncate_snippet(&long_str);
+        // ≤303: 300 chars + 3-byte ellipsis (1 char '…')
+        assert!(result.chars().count() <= MAX_SNIPPET_CHARS + 1);
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn truncate_snippet_respects_line_limit() {
+        let input = (0..10).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let result = truncate_snippet(&input);
+        let line_count = result.lines().count();
+        // Only first 5 lines retained (the … is on the last line after join)
+        assert!(line_count <= MAX_SNIPPET_LINES, "got {line_count} lines");
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn truncate_snippet_does_not_truncate_short_string() {
+        let input = "line1\nline2";
+        let result = truncate_snippet(input);
+        assert_eq!(result, input);
+        assert!(!result.ends_with('…'));
+    }
+
+    #[test]
+    fn handle_ui_event_tool_start_pushes_tool_call_entry() {
         let mut app = TuiApp::headless();
         app.handle_ui_event(TurnEvent::ToolStart {
             name: "bash".to_string(),
             params: serde_json::json!({"command": "ls"}),
         });
-        assert_eq!(app.tool_entries.len(), 1);
-        assert!(app.tool_entries[0].name.contains("bash"));
+        // Last entry in chat_history should be ToolCall{Running}
+        match app.chat_history.last().expect("should have entry") {
+            ChatEntry::ToolCall { name, status, output_snippet } => {
+                assert_eq!(name, "bash");
+                assert_eq!(*status, ToolStatus::Running);
+                assert!(output_snippet.is_none());
+            }
+            _ => panic!("expected ChatEntry::ToolCall"),
+        }
     }
 
     #[test]
-    fn handle_ui_event_tool_complete_ok_logged() {
+    fn handle_ui_event_tool_complete_success_updates_to_done() {
         let mut app = TuiApp::headless();
         app.handle_ui_event(TurnEvent::ToolStart {
-            name: "read".to_string(),
+            name: "bash".to_string(),
             params: serde_json::json!({}),
         });
         app.handle_ui_event(TurnEvent::ToolComplete {
-            name: "read".to_string(),
-            result: "file contents".to_string(),
+            name: "bash".to_string(),
+            result: "ok".to_string(),
             is_error: false,
         });
-        assert_eq!(app.tool_entries.len(), 1);
-        assert!(!app.tool_entries[0].is_error);
-        assert_eq!(app.tool_entries[0].result, Some("file contents".to_string()));
+        match app.chat_history.last().expect("should have entry") {
+            ChatEntry::ToolCall { status, output_snippet, .. } => {
+                assert_eq!(*status, ToolStatus::Done);
+                assert!(output_snippet.is_none(), "success: no snippet");
+            }
+            _ => panic!("expected ChatEntry::ToolCall"),
+        }
     }
 
     #[test]
-    fn handle_ui_event_tool_complete_err_logged() {
+    fn handle_ui_event_tool_complete_error_updates_to_error_with_snippet() {
         let mut app = TuiApp::headless();
         app.handle_ui_event(TurnEvent::ToolStart {
             name: "bash".to_string(),
@@ -648,10 +823,28 @@ mod tests {
         });
         app.handle_ui_event(TurnEvent::ToolComplete {
             name: "bash".to_string(),
-            result: "error: something went wrong".to_string(),
+            result: "error text".to_string(),
             is_error: true,
         });
-        assert!(app.tool_entries[0].is_error);
+        match app.chat_history.last().expect("should have entry") {
+            ChatEntry::ToolCall { status, output_snippet, .. } => {
+                assert_eq!(*status, ToolStatus::Error);
+                assert_eq!(output_snippet.as_deref(), Some("error text"));
+            }
+            _ => panic!("expected ChatEntry::ToolCall"),
+        }
+    }
+
+    #[test]
+    fn handle_ui_event_tool_complete_unknown_name_is_noop() {
+        let mut app = TuiApp::headless();
+        // No prior ToolStart — complete for unknown name should not panic
+        app.handle_ui_event(TurnEvent::ToolComplete {
+            name: "unknown".to_string(),
+            result: "x".to_string(),
+            is_error: false,
+        });
+        assert!(app.chat_history.is_empty());
     }
 
     #[test]
@@ -708,94 +901,6 @@ mod tests {
         // 1000 input @ $3/M + 2000 output @ $15/M = $0.0030 + $0.0300 = $0.0330
         let cost = (1000_f64 / 1_000_000.0) * 3.00 + (2000_f64 / 1_000_000.0) * 15.00;
         assert_eq!(format!("${:.4}", cost), "$0.0330");
-    }
-
-    // ─── Step 3: Structured ToolEntry tests ──────────────────────────────────
-
-    #[test]
-    fn tool_entry_start_creates_running_entry() {
-        let mut app = TuiApp::headless();
-        app.handle_ui_event(TurnEvent::ToolStart {
-            name: "read".to_string(),
-            params: serde_json::json!({}),
-        });
-        assert_eq!(app.tool_entries.len(), 1);
-        let entry = &app.tool_entries[0];
-        assert_eq!(entry.name, "read");
-        assert_eq!(entry.params, "{}");
-        assert!(entry.result.is_none());
-        assert!(!entry.is_error);
-        assert!(!entry.expanded);
-    }
-
-    #[test]
-    fn tool_entry_complete_fills_result() {
-        let mut app = TuiApp::headless();
-        app.handle_ui_event(TurnEvent::ToolStart {
-            name: "read".to_string(),
-            params: serde_json::json!({}),
-        });
-        app.handle_ui_event(TurnEvent::ToolComplete {
-            name: "read".to_string(),
-            result: "contents".to_string(),
-            is_error: false,
-        });
-        let entry = &app.tool_entries[0];
-        assert_eq!(entry.result, Some("contents".to_string()));
-        assert!(!entry.is_error);
-    }
-
-    #[test]
-    fn tool_entry_is_error_from_turn_event() {
-        let mut app = TuiApp::headless();
-        app.handle_ui_event(TurnEvent::ToolStart {
-            name: "bash".to_string(),
-            params: serde_json::json!({}),
-        });
-        app.handle_ui_event(TurnEvent::ToolComplete {
-            name: "bash".to_string(),
-            result: "error msg".to_string(),
-            is_error: true,
-        });
-        let entry = &app.tool_entries[0];
-        assert!(entry.is_error);
-    }
-
-    #[test]
-    fn tool_entry_expand_toggle() {
-        let mut app = TuiApp::headless();
-        app.handle_ui_event(TurnEvent::ToolStart {
-            name: "bash".to_string(),
-            params: serde_json::json!({}),
-        });
-        app.selected_tool = Some(0);
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        events::handle_key_event(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE), &mut app);
-        assert!(app.tool_entries[0].expanded);
-        // toggle again
-        events::handle_key_event(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE), &mut app);
-        assert!(!app.tool_entries[0].expanded);
-    }
-
-    #[test]
-    fn tool_selection_bracket_keys() {
-        let mut app = TuiApp::headless();
-        for name in ["a", "b", "c"] {
-            app.handle_ui_event(TurnEvent::ToolStart {
-                name: name.to_string(),
-                params: serde_json::json!({}),
-            });
-        }
-        app.selected_tool = Some(1);
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        events::handle_key_event(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE), &mut app);
-        assert_eq!(app.selected_tool, Some(2));
-        // At end: ] stays at last
-        events::handle_key_event(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE), &mut app);
-        assert_eq!(app.selected_tool, Some(2));
-        // [ moves back
-        events::handle_key_event(KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE), &mut app);
-        assert_eq!(app.selected_tool, Some(1));
     }
 
     // ─── Step 4: parse_chat_blocks tests ─────────────────────────────────────
@@ -879,6 +984,7 @@ mod tests {
     fn headless_app_starts_pinned() {
         let app = TuiApp::headless();
         assert!(app.scroll_pinned, "should start pinned");
+        assert!(app.abort_tx.is_none(), "abort_tx should be None on init");
     }
 
     #[test]
@@ -907,6 +1013,11 @@ mod tests {
             params: serde_json::json!({}),
         });
         assert_eq!(app.scroll_offset, usize::MAX);
+        // ToolStart should push a ChatEntry::ToolCall into chat_history
+        assert!(
+            matches!(app.chat_history.last(), Some(ChatEntry::ToolCall { .. })),
+            "ToolStart should append ChatEntry::ToolCall to chat_history"
+        );
     }
 
     #[test]
@@ -924,6 +1035,14 @@ mod tests {
             is_error: false,
         });
         assert_eq!(app.scroll_offset, usize::MAX);
+        // ToolComplete should update the ChatEntry::ToolCall to Done
+        assert!(
+            matches!(
+                app.chat_history.last(),
+                Some(ChatEntry::ToolCall { status: ToolStatus::Done, .. })
+            ),
+            "ToolComplete (success) should set status to Done"
+        );
     }
 
     #[test]
@@ -1007,5 +1126,42 @@ mod tests {
     fn headless_with_limit_none_matches_headless() {
         let app = TuiApp::headless_with_limit(None);
         assert_eq!(app.context_limit, None);
+    }
+
+    // ─── Step 3: event loop wiring tests ─────────────────────────────────────
+
+    #[test]
+    fn handle_cancel_drains_abort_tx() {
+        let mut app = TuiApp::headless();
+        let (tx, mut rx) = oneshot::channel::<()>();
+        app.abort_tx = Some(tx);
+        app.handle_cancel();
+        // abort_tx must be None after call
+        assert!(app.abort_tx.is_none(), "handle_cancel must take() the sender");
+        // The channel must have received the signal
+        assert!(
+            rx.try_recv().is_ok(),
+            "handle_cancel must send () on the channel"
+        );
+    }
+
+    #[test]
+    fn handle_cancel_is_noop_when_abort_tx_is_none() {
+        let mut app = TuiApp::headless();
+        assert!(app.abort_tx.is_none());
+        // Should not panic
+        app.handle_cancel();
+        assert!(app.abort_tx.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_submit_help_command_no_longer_sets_show_help() {
+        let mut app = TuiApp::headless();
+        // /help should no longer be a special case — it should be submitted as a
+        // regular user message (or discarded if trimmed is non-empty but just a
+        // slash command — the point is show_help is NOT set)
+        app.handle_submit("/help".to_string()).await;
+        // show_help still exists as a legacy field but must not be set to true by /help
+        assert!(!app.show_help, "/help must no longer set show_help");
     }
 }
