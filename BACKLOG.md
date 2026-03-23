@@ -19,6 +19,13 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 > **Bootstrap goal:** ap builds ap. Critical path: Provider abstraction → AGENTS.md → Self-hosting. Everything else is secondary until the loop flips.
 
+0. [ ] **Session persistence in --prompt mode** — `ap --prompt "..."` (non-interactive/headless) currently discards session history; it should save to `~/.ap/sessions/` just like interactive mode:
+    - On startup in `--prompt` mode, create a named session (slug from prompt, e.g. `prompt-read-backlog-2026-03-22`) same as interactive
+    - After turn completes, save session to `~/.ap/sessions/<name>.json`
+    - `--session <name>` flag works in `--prompt` mode to explicitly name/resume a session
+    - Stdout still receives the response (existing behavior preserved)
+    - Test: `ap --prompt "hello"` creates a session file in `~/.ap/sessions/`
+
 1. [ ] **Provider abstraction** — Clean Provider trait with easy swap. Add OpenAI-compatible provider (works with any OpenAI API endpoint — OpenRouter, LM Studio, Ollama). Config: `[provider] backend = "openai-compat" base_url = "..." api_key = "..."`. Streaming via SSE. Same tool call format as Bedrock adapter.
 
 2. [x] **AGENTS.md support** — Load and inject agent context from both global and project level, same convention as pi/claude code:
