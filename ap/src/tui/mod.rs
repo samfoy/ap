@@ -25,12 +25,16 @@ use tokio::sync::mpsc;
 use crate::provider::Provider;
 use crate::tools::ToolRegistry;
 use crate::turn::turn;
+use crate::tui::Theme;
 use crate::types::{Conversation, Middleware, TurnEvent};
 use crate::context::maybe_compress_context;
 use crate::config::ContextConfig;
 
 pub mod events;
+pub mod theme;
 pub mod ui;
+
+pub use theme::Theme;
 
 // ─── ChatBlock / ChatEntry ────────────────────────────────────────────────────
 
@@ -156,6 +160,9 @@ pub struct ToolEntry {
 /// in `Arc<tokio::sync::Mutex<Conversation>>` so the spawned turn task can
 /// update it while the UI continues to render.
 pub struct TuiApp {
+    /// Active color theme.
+    pub theme: Theme,
+
     /// Current input mode.
     pub mode: AppMode,
 
@@ -239,6 +246,7 @@ impl TuiApp {
     ) -> Result<Self> {
         let (ui_tx, ui_rx) = mpsc::channel(256);
         Ok(Self {
+            theme: Theme::default(),
             mode: AppMode::Normal,
             chat_history: Vec::new(),
             tool_entries: Vec::new(),

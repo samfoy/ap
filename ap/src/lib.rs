@@ -10,3 +10,5 @@ pub mod tools;
 pub mod tui;
 pub mod turn;
 pub mod types;
+
+pub use tui::Theme;

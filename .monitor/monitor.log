@@ -303,3 +303,6 @@ The log is mismatched to the stated goal. The five meaningful commits (`0d09b36`
 [17:17:00] WARNING: Ralph may not have started for Prompt templates
 [17:17:30] Starting: Prompt templates
 [17:17:30] Worktree already exists: /Users/sam.painter/Projects/ap-worktrees/prompt-templates
+[17:17:33] WARNING: Ralph may not have started for Prompt templates
+[17:18:03] Starting: Prompt templates
+[17:18:03] Worktree already exists: /Users/sam.painter/Projects/ap-worktrees/prompt-templates
