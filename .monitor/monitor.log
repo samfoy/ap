@@ -291,3 +291,5 @@ The log is mismatched to the stated goal. The five meaningful commits (`0d09b36`
 **The gap:** Pi/Agent Skills compatibility was the stated goal but the loop ran Amazon toolchain instead. Both are marked `[~]` (in-progress) in the backlog, but neither has implementation — only plans in PROMPT.md and BACKLOG.md.
 [17:14:29] Merging feature/pi-agent-skills-compatibility into main...
 [17:14:29] Merged and cleaned up worktree for: Pi/Agent Skills compatibility
+[17:14:32] Starting: Project-level config
+[17:14:32] Created worktree: /Users/sam.painter/Projects/ap-worktrees/project-level-config (feature/project-level-config)

@@ -192,7 +192,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
     **Reference:** pi skill spec at `~/Projects/pi-knowledge-search/node_modules/@mariozechner/pi-coding-agent/docs/skills.md`
 
-22. [ ] **Project-level config** — Per-project `ap.toml` that overlays global config:
+22. [~] **Project-level config** — Per-project `ap.toml` that overlays global config:
     - Locations: `~/.ap/config.toml` (global) and `.ap/config.toml` (project, cwd + ancestors up to git root)
     - Project config discovered automatically at startup; applied after global
     - Deep merge for nested tables (e.g. `[context]`, `[skills]`), scalar values override
