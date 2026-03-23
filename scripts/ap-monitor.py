@@ -236,7 +236,20 @@ Output only the PROMPT.md content."""
         capture_output=True, text=True, timeout=300
     )
     if r.returncode == 0 and r.stdout.strip():
-        return r.stdout.strip()
+        raw = r.stdout.strip()
+        # Strip any preamble before the first markdown heading
+        if '\n# ' in raw:
+            raw = raw[raw.index('\n# ') + 1:]
+        elif raw.startswith('# '):
+            pass  # clean already
+        else:
+            # Last resort: find first '#' line
+            lines = raw.splitlines()
+            for i, line in enumerate(lines):
+                if line.startswith('#'):
+                    raw = '\n'.join(lines[i:])
+                    break
+        return raw
     log(f"Prompt generation attempt {attempt} failed for '{title}': {r.stderr[:200]}")
     if attempt < MAX_PROMPT_RETRIES:
         time.sleep(10 * attempt)
