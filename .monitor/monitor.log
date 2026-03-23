@@ -461,3 +461,13 @@ The gap is the entire feature — all 204 passing tests are pre-existing, none b
 **The gap is structural and recurring.** The monitor loop is conflating backlog state-tracking with delivery: it fires `chore(monitor): complete X` commits that flip a BACKLOG checkbox but leave `ap/src/provider/` completely untouched (`bedrock.rs` and `mod.rs` only, both from earlier work). The surrounding noise — backend flip-flopping between `ap` and `claude code` (`a3d5cc7` → `c910f4b`), idle-timeout tuning, and zsh shell fixes — are all monitor self-maintenance, not feature work. The Kiro spec in `BACKLOG.md` is detailed and correct, but none of it was ported from the TypeScript reference.
 [20:33:30] Starting: Slack bot integration
 [20:33:30] Starting: Slack bot integration
+[20:36:09] Ralph running for Slack bot integration
+[20:36:09] Ralph running for Slack bot integration
+[20:36:39] LOOP_COMPLETE: Slack bot integration
+[20:36:39] LOOP_COMPLETE: Slack bot integration
+[20:36:49] Review: Let me look at the relevant files to give you an informed answer.**Did not land.** The "init" commit (`1241ad0`) is purely bookkeeping — it flips the BACKLOG checkbox to `[~]`, appends two duplicate log lines, and drops a broken one-liner `PROMPT.md` stub; zero Rust source files were written. This is the exact same failure mode as the prior Kiro provider goal: the monitor conflates *acknowledging* a task with *completing* it.
+
+**The gap:** There is no Slack bot code anywhere — no `slack.rs`, no event handler, no OAuth/token wiring, nothing. The `[~]` in-progress marker is misleading; the task never actually started at the implementation level.
+[20:36:49] Review: Let me look at the relevant files to give you an informed answer.**Did not land.** The "init" commit (`1241ad0`) is purely bookkeeping — it flips the BACKLOG checkbox to `[~]`, appends two duplicate log lines, and drops a broken one-liner `PROMPT.md` stub; zero Rust source files were written. This is the exact same failure mode as the prior Kiro provider goal: the monitor conflates *acknowledging* a task with *completing* it.
+
+**The gap:** There is no Slack bot code anywhere — no `slack.rs`, no event handler, no OAuth/token wiring, nothing. The `[~]` in-progress marker is misleading; the task never actually started at the implementation level.

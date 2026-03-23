@@ -314,3 +314,15 @@ d5eef4e backlog: add TUI overhaul item — simple pi/claude-code style UI, fix C
 c910f4b fix(monitor): revert to ap backend (claude auth lapsed), keep idle-timeout 300s
 a3d5cc7 fix(monitor): switch backend to claude code, bump idle-timeout to 300s
 df2d149 chore(monitor): complete Model switching
+
+## 2026-03-22 20:36 — Slack bot integration
+Review: Let me look at the relevant files to give you an informed answer.**Did not land.** The "init" commit (`1241ad0`) is purely bookkeeping — it flips the BACKLOG checkbox to `[~]`, appends two duplicate log lines, and drops a broken one-liner `PROMPT.md` stub; zero Rust source files were written. This is the exact same failure mode as the prior Kiro provider goal: the monitor conflates *acknowledging* a task with *completing* it.
+
+**The gap:** There is no Slack bot code anywhere — no `slack.rs`, no event handler, no OAuth/token wiring, nothing. The `[~]` in-progress marker is misleading; the task never actually started at the implementation level.
+Commits:
+1241ad0 chore: init Slack bot integration
+b2c0126 chore(monitor): complete Kiro provider
+ccc0ba2 chore: regenerate PROMPT.md for Kiro provider
+955da39 fix(monitor): use zsh login shell for all subprocess calls
+d5eef4e backlog: add TUI overhaul item — simple pi/claude-code style UI, fix Ctrl+Enter
+c910f4b fix(monitor): revert to ap backend (claude auth lapsed), keep idle-timeout 300s
