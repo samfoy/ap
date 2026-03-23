@@ -50,7 +50,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - TUI: `s` key opens session browser overlay — scrollable list, preview pane, Enter to resume, `f` to fork
     - Remove the `--session` opt-in flag concept entirely — persistence is always on
 
-6. [~] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
+6. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
     - `/model <id>` command in TUI input switches active model immediately
     - `--model` CLI flag overrides config at startup
     - Model displayed in TUI status bar
@@ -142,7 +142,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
 
-19. [x] **Robust file editing** — Reliable, no-friction file edits by default:
+19. [ ] **Robust file editing** — Reliable, no-friction file edits by default:
     - **No approval prompts by default** — edits apply immediately, no confirmation dialogs. Trust the user. `--safe` flag available for those who want confirmation.
     - **Dry-run / diff preview** — `--dry-run` flag shows unified diff without writing. Claude can also call `preview_edit` tool to show before applying.
     - **Atomic multi-file apply** — all edits in a turn applied as a batch; if any write fails, roll back the whole set
@@ -152,7 +152,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Write tool:** `{ "file": string, "content": string }` — full file overwrite, always works
     - Config: `[editing] require_approval = false` (default)
 
-20. [x] **Amazon toolchain integration** — First-class support for Ada and AWS credentials/SDK:
+20. [ ] **Amazon toolchain integration** — First-class support for Ada and AWS credentials/SDK:
     - **Ada credential management** — detect and use Ada-vended credentials automatically. Run `ada credentials update --provider isengard --account <id> --role <role>` when creds are expired. ap knows to re-credential and retry if AWS calls return 401/403.
     - **AWS CLI/SDK awareness** — `aws` tool built-in: Claude can call AWS CLI commands directly as a tool call. Results returned as structured JSON where possible.
     - **Profile detection** — auto-detect active AWS profile from environment (`AWS_PROFILE`, `~/.aws/config`), surface in TUI status bar
