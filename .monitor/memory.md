@@ -350,3 +350,15 @@ f8c1722 chore: init Background process management + tmux sub-agents
 1d4e53e chore(monitor): complete Slack bot integration
 1241ad0 chore: init Slack bot integration
 b2c0126 chore(monitor): complete Kiro provider
+
+## 2026-03-22 20:46 — Semantic search over sessions + directories
+Review: I'll read the final commit and the monitor commit for the semantic search feature to assess the work.**Did not land cleanly.** The `chore: init` commit for Semantic search only marks the backlog item `[~]` and drops a stub `PROMPT.md` that literally contains the unfinished sentence *"Now I have a thorough understanding of the codebase. Let me write the PROMPT.md."* — so the spec was never actually written before the session was committed. There is no corresponding `chore(monitor): complete` counterpart in the log, meaning the sub-agent session was kicked off but the implementation loop never closed.
+
+The gap is real and structural: zero `.rs` source files were touched — no `fastembed-rs` integration, no HNSW index, no `search` tool, no `--recall` flag, none of the acceptance criteria from the backlog spec. The feature is entirely unstarted despite being marked in-progress.
+Commits:
+1d235c6 chore: init Semantic search over sessions + directories
+2b35afa chore(monitor): complete Streaming improvements
+fec2e57 chore: init Streaming improvements
+c300ddf chore(monitor): complete Background process management + tmux sub-agents
+f8c1722 chore: init Background process management + tmux sub-agents
+1d4e53e chore(monitor): complete Slack bot integration
