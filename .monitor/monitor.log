@@ -531,3 +531,5 @@ The gap is the entire feature: there is no `chore(monitor): complete` counterpar
 [20:53:22] Review: **No, it did not land — it's a phantom init, identical to the prior pattern.** `bfd88d1` only flips the BACKLOG item from `[ ]` to `[~]`, appends two log lines, and drops a broken one-liner `PROMPT.md` stub (`"Now I have a thorough understanding of the codebase. Let me write the PROMPT.md:"`) that was never completed. Zero Rust source files were touched — no markdown parser integration, no Mermaid renderer, no TUI rendering changes whatsoever.
 
 The gap is the entire feature: there is no `chore(monitor): complete` counterpart commit in the log for this work, which means the monitor loop stalled after `init` and never spawned or completed a sub-agent execution. The `PROMPT.md` stub being a truncated sentence is the tell — the monitor wrote an incomplete thought and committed it as if it were a real spec.
+[20:53:23] Starting: Image support
+[20:53:23] Starting: Image support
