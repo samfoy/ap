@@ -191,10 +191,14 @@ def spawn_ralph(title):
     # Warm up AWS credentials before spawning
     check_aws_credentials()
 
-    # Clear stale ralph state from prior loop
+    # Clear stale ralph state from prior loop (including stale lock files)
     stale = AP_DIR / ".ralph"
     if stale.exists():
         run(f"rm -rf '{stale}'")
+    # Extra safety: remove any orphaned lock left by a dead PID
+    lock = AP_DIR / ".ralph" / "loop.lock"
+    if lock.exists():
+        lock.unlink(missing_ok=True)
 
     scratchpad = AP_DIR / ".ralph/agent/scratchpad.md"
     if scratchpad.exists():
