@@ -954,3 +954,45 @@ The gap is total on the Rust side: `BACKLOG.md` marks the item as `[~]` (in-prog
 [08:56:39] ♥ alive — active: ['Model switching']
 [09:01:40] ♥ alive — active: ['Model switching']
 [09:06:40] ♥ alive — active: ['Model switching']
+(anon):setopt:7: can't change option: monitor
+
+[[31mERROR[39m]: gitstatus failed to initialize.
+
+
+  Add the following parameter to ~/.zshrc for extra diagnostics on error:
+
+    GITSTATUS_LOG_LEVEL=DEBUG
+
+  Restart Zsh to retry gitstatus initialization:
+
+    [32mexec zsh[39m
+[09:39:15] ap monitor started (direct-on-main mode)
+[09:39:15] ap monitor started (direct-on-main mode)
+[09:39:15] Removing stale loop.lock (dead PID 83780)
+[09:39:15] Removing stale loop.lock (dead PID 83780)
+[09:39:19] AWS credentials OK
+[09:39:19] AWS credentials OK
+[09:39:19] Resuming in-progress item: Model switching
+[09:39:19] Resuming in-progress item: Model switching
+[09:39:21] AWS credentials OK
+[09:39:21] AWS credentials OK
+[09:39:32] WARNING: Ralph may not have started for Model switching
+[09:39:32] WARNING: Ralph may not have started for Model switching
+(anon):setopt:7: can't change option: monitor
+
+[[31mERROR[39m]: gitstatus failed to initialize.
+
+
+  Add the following parameter to ~/.zshrc for extra diagnostics on error:
+
+    GITSTATUS_LOG_LEVEL=DEBUG
+
+  Restart Zsh to retry gitstatus initialization:
+
+    [32mexec zsh[39m
+[09:40:06] ap monitor started (direct-on-main mode)
+[09:40:06] ap monitor started (direct-on-main mode)
+[09:40:08] AWS credentials OK
+[09:40:08] AWS credentials OK
+[09:40:08] Starting: Kiro provider
+[09:40:08] Starting: Kiro provider
