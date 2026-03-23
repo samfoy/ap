@@ -300,3 +300,6 @@ The log is mismatched to the stated goal. The five meaningful commits (`0d09b36`
 [17:16:54] Merged and cleaned up worktree for: Project-level config
 [17:16:56] Starting: Prompt templates
 [17:16:57] Created worktree: /Users/sam.painter/Projects/ap-worktrees/prompt-templates (feature/prompt-templates)
+[17:17:00] WARNING: Ralph may not have started for Prompt templates
+[17:17:30] Starting: Prompt templates
+[17:17:30] Worktree already exists: /Users/sam.painter/Projects/ap-worktrees/prompt-templates
