@@ -151,9 +151,9 @@ def spawn_ralph(title):
 
     scratchpad = AP_DIR / ".ralph/agent/scratchpad.md"
     if scratchpad.exists():
-        cmd = f"nohup ralph run -H builtin:pdd-to-code-assist --no-tui --continue >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup ralph run --no-tui --continue >> {RALPH_LOG} 2>&1 &"
     else:
-        cmd = f"nohup ralph run -H builtin:pdd-to-code-assist --no-tui >> {RALPH_LOG} 2>&1 &"
+        cmd = f"nohup ralph run --no-tui >> {RALPH_LOG} 2>&1 &"
     run(cmd)
     time.sleep(3)
     if ralph_running():
