@@ -495,3 +495,5 @@ The gap is that this is a `chore: init` commit, meaning the sub-agent session wa
 [20:43:15] Review: Let me look at the repository to give you an informed answer.**Clean init, but it only landed the prompt — not the code.** The final commit (`fec2e57`) marks Streaming improvements as `[~]` (in-progress) in the backlog and writes a detailed `ap/PROMPT.md` spec (R1–R10, 8 steps, 14 ACs), but there are zero changes to any `.rs` source files — no `turn_streaming()`, no `CancellationToken`, no `TurnEvent::Cancelled`, none of the actual implementation.
 
 The gap is that this is a `chore: init` commit, meaning the sub-agent session was kicked off but hasn't run yet. The work is fully specced and ready to execute, but the loop hasn't produced a `chore(monitor): complete Streaming improvements` counterpart commit, so the feature is still outstanding.
+[20:43:17] Starting: Semantic search over sessions + directories
+[20:43:17] Starting: Semantic search over sessions + directories
