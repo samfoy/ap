@@ -446,3 +446,15 @@ e6a0257 chore(monitor): complete Pi/Agent Skills compatibility
 c82ea78 chore(monitor): complete Amazon toolchain integration
 2075d3f chore: init Amazon toolchain integration
 f70b6f6 chore(monitor): complete Robust file editing
+
+## 2026-03-22 21:14 — Retry with exponential backoff
+Review: **No, it did not land cleanly — in fact, it didn't land at all.** `e097ffc` is a dangling `init` commit: it ticks the backlog item to `[~]` (in-progress) and writes a detailed `PROMPT.md` spec, but contains zero changes to `src/`. There is no subsequent `chore(monitor): complete Retry with exponential backoff` commit, no `feat: merge`, and `grep` finds no retry/backoff code anywhere in the source tree.
+
+The pattern in this log is `init → (monitor: complete) → feat: merge`; Retry with exponential backoff is missing every step after the `init`. The feature was specced out but never implemented or merged — `e097ffc` is the tip of the branch, so it's simply an open work item frozen mid-flight.
+Commits:
+e097ffc chore: init Retry with exponential backoff
+b3de6cb chore(monitor): complete Prompt templates
+f31416f chore: init Prompt templates
+e6a0257 chore(monitor): complete Pi/Agent Skills compatibility
+1094cf9 chore: init Pi/Agent Skills compatibility
+c82ea78 chore(monitor): complete Amazon toolchain integration
