@@ -228,7 +228,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - `--no-prompt-templates` to disable discovery
     - Reference: pi prompt templates at `~/Projects/pi-knowledge-search/node_modules/@mariozechner/pi-coding-agent/docs/prompt-templates.md`
 
-24. [ ] **Retry with exponential backoff** — Automatic retry on transient provider errors:
+24. [~] **Retry with exponential backoff** — Automatic retry on transient provider errors:
     - Retry on: HTTP 429 (rate limit), 5xx server errors, network timeouts, SSE stream drops
     - Exponential backoff: base 2s, doubling each attempt (2s → 4s → 8s → ...)
     - Configurable: `[retry] enabled = true`, `max_retries = 3`, `base_delay_ms = 2000`, `max_delay_ms = 60000`

@@ -1,563 +1,581 @@
-# PROMPT.md — Robust File Editing
+# PROMPT.md — Retry with Exponential Backoff
 
 ## Vision
 
-`ap` currently has basic `edit` and `write` tools that work in isolation but
-lack the safety and ergonomics expected of a production coding agent.  This
-feature hardens file editing end-to-end:
+When a provider call fails due to a transient condition (rate-limiting, server
+overload, network blip, SSE stream drop), the agent should automatically retry
+rather than surfacing a raw error to the user. Retries use exponential backoff
+to avoid thundering-herd problems, respect `Retry-After` headers from the
+server, and are fully configurable. Non-retryable errors (auth failures, bad
+requests, quota exceeded beyond `max_delay_ms`) fail immediately with a clear
+message. The TUI status bar shows live retry progress (`retrying (2/3)...`) so
+the user is never left wondering why the agent is silent.
 
-- **Zero friction by default** — edits apply immediately, no confirmation
-  dialogs. Trust the user. A `--safe` flag adds approval prompts for those who
-  want them.
-- **Dry-run / diff preview** — `--dry-run` shows a unified diff to stdout
-  without writing anything. Claude can call a `preview_edit` tool to display a
-  diff before applying.
-- **Atomic multi-file apply** — all writes/edits requested during a turn are
-  buffered, then written together. If any write fails, every already-written
-  file is rolled back to its pre-edit state.
-- **Undo** — `/undo` in the TUI (or `--undo` flag headless) reverts the last
-  batch of edits by restoring pre-edit snapshots from `~/.ap/undo/`.
-- **Large file safety** — files >1000 lines warn when `old_str` spans >50
-  lines; the tool validates that `old_str` is actually present before touching
-  the file. The `write` tool stores a snapshot before overwriting.
-- **Config** — a new `[editing]` TOML section controls behaviour.
-
-The implementation must stay consistent with the project's functional-first
-style: pure functions, immutable data, iterator chains, no hidden mutation.
-Every step must compile cleanly and pass `cargo test` before moving to the
-next.
+The implementation must stay true to the project's functional-first philosophy:
+- No mutation of shared state; retry logic is a pure transform on the provider
+  call site.
+- The retry engine is a standalone module (`src/retry.rs`) with zero TUI or
+  provider coupling.
+- `TurnEvent::Retrying` carries all needed display data; the TUI consumes it
+  like any other event — no special-casing in the turn loop.
+- All new public functions are pure (no side-effects beyond `tokio::time::sleep`)
+  and are independently unit-testable with a mock clock/provider.
 
 ---
 
 ## Technical Requirements
 
-### New types (add to `src/editing/mod.rs` unless noted)
+### 1. New types and signatures
+
+#### `src/retry.rs` (new module)
 
 ```rust
-// src/editing/mod.rs
+use std::time::Duration;
+use crate::provider::ProviderError;
 
-/// A single pending write, buffered before atomic apply.
-#[derive(Debug, Clone)]
-pub struct PendingWrite {
-    /// Absolute path of the file to write.
-    pub path: PathBuf,
-    /// New content to write.
-    pub new_content: String,
-    /// Content that was on disk before any edit in this batch
-    /// (None if the file did not exist).
-    pub original_content: Option<String>,
+/// Classification of whether a ProviderError can be retried.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RetryKind {
+    /// Transient — worth retrying (HTTP 429, 5xx, stream drop, timeout).
+    Transient,
+    /// Permanent — fail immediately (4xx auth/bad-request, quota > max_delay).
+    Permanent,
 }
 
-/// Outcome of `apply_batch`.
-#[derive(Debug)]
-pub struct ApplyResult {
-    /// Files successfully written (absolute paths).
-    pub written: Vec<PathBuf>,
-    /// The first error that caused a rollback, if any.
-    pub error: Option<(PathBuf, std::io::Error)>,
-}
+/// Decide whether `err` is worth retrying.
+///
+/// Pure function — no I/O.
+pub fn classify_error(err: &ProviderError) -> RetryKind { ... }
 
-/// A batch of file operations accumulated during one turn.
-/// Pure value — callers clone/replace, never mutate in place.
-#[derive(Debug, Clone, Default)]
-pub struct EditBatch {
-    pub writes: Vec<PendingWrite>,
-}
-
-impl EditBatch {
-    pub fn new() -> Self { Self::default() }
-
-    /// Add a write to the batch.  If `path` already appears, replace it
-    /// (last-write-wins within one turn).
-    pub fn add_write(self, pending: PendingWrite) -> Self;
-
-    /// Return all pending paths (for display / preview).
-    pub fn paths(&self) -> Vec<&PathBuf>;
-}
-
-/// Compute a unified diff string between two texts.
-/// Returns an empty string when old == new.
-pub fn unified_diff(old: &str, new: &str, path: &str) -> String;
-
-/// Apply `batch` atomically: write all files, rolling back on the first
-/// failure.  Saves pre-edit snapshots into `undo_dir` before writing.
-/// Pure-ish: all I/O is isolated here, callers stay pure.
-pub async fn apply_batch(
-    batch: &EditBatch,
-    undo_dir: &Path,
-) -> ApplyResult;
-
-/// Restore the last snapshot from `undo_dir`, returning the list of
-/// files restored or an error.
-pub async fn undo_last(undo_dir: &Path) -> anyhow::Result<Vec<PathBuf>>;
-```
-
-```rust
-// src/config.rs  — add to AppConfig / overlay_from_table
-
+/// Configuration for the retry engine (loaded from `[retry]` TOML table).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct EditingConfig {
-    /// When true, every edit/write requires user confirmation before applying.
-    pub require_approval: bool,
-    /// When true, show a unified diff but do not write anything.
-    pub dry_run: bool,
+pub struct RetryConfig {
+    pub enabled: bool,
+    pub max_retries: u32,
+    pub base_delay_ms: u64,
+    pub max_delay_ms: u64,
 }
 
-impl Default for EditingConfig {
+impl Default for RetryConfig {
     fn default() -> Self {
-        Self { require_approval: false, dry_run: false }
+        Self {
+            enabled: true,
+            max_retries: 3,
+            base_delay_ms: 2000,
+            max_delay_ms: 60_000,
+        }
     }
 }
-// AppConfig gains:  pub editing: EditingConfig
+
+/// Compute the delay for attempt `n` (0-indexed), applying exponential
+/// backoff capped at `config.max_delay_ms`.
+///
+/// Formula: min(base_delay_ms * 2^n, max_delay_ms)
+///
+/// Pure function — no I/O.
+pub fn backoff_delay(config: &RetryConfig, attempt: u32) -> Duration { ... }
+
+/// Parse a `Retry-After` header value (seconds as integer or HTTP-date string).
+/// Returns `None` when the value cannot be parsed.
+///
+/// Pure function — no I/O.
+pub fn parse_retry_after(value: &str) -> Option<Duration> { ... }
 ```
 
-```rust
-// src/tools/edit.rs  — updated schema and parameter names
+#### Extended `ProviderError` (in `src/provider/mod.rs`)
 
-// Schema field names change to match Claude Code / pi convention:
-//   "file"    (was "path")
-//   "old_str" (was "old_text")
-//   "new_str" (was "new_text")
-// The execute() function must accept BOTH old and new names for backward
-// compat during the transition (check "file" first, fall back to "path";
-// "old_str" first, fall back to "old_text"; etc.)
+Add variants that carry enough structured information for `classify_error` to
+work without string-matching:
+
+```rust
+pub enum ProviderError {
+    // existing variants kept as-is ...
+    #[error("AWS error: {0}")]
+    Aws(String),
+    #[error("parse error: {0}")]
+    ParseError(String),
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    // NEW variants:
+    /// HTTP-level error with a status code. 429 and 5xx are retryable.
+    #[error("HTTP {status}: {message}")]
+    Http { status: u16, message: String, retry_after: Option<Duration> },
+
+    /// Network-level failure (timeout, connection reset, stream EOF). Always retryable.
+    #[error("network error: {0}")]
+    Network(String),
+
+    /// Request was structurally invalid; never retryable.
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+
+    /// Rate-limited with an explicit retry delay from the server.
+    #[error("rate limited: retry after {retry_after_secs}s")]
+    RateLimited { retry_after_secs: u64 },
+}
 ```
 
-```rust
-// src/tools/write.rs  — updated schema field name
+> **Note on existing `Aws(String)` variant:** The current Bedrock provider maps
+> *all* SDK errors to `ProviderError::Aws(String)`. Keep that variant for
+> backward compat; `classify_error` will inspect the string content as a
+> fallback for errors that do not yet use the structured variants. New code
+> should prefer the structured variants.
 
-// Schema field "file" (was "path").  Same fallback rule as edit.
-```
-
-```rust
-// src/tools/preview_edit.rs  — new tool
-
-pub struct PreviewEditTool;
-// schema: { "file": string, "old_str": string, "new_str": string }
-// execute(): computes unified_diff, returns it as ToolResult::ok(diff_text)
-// Does NOT write anything — pure read + diff.
-```
+#### Extended `TurnEvent` (in `src/types.rs`)
 
 ```rust
-// src/turn.rs  — accumulate EditBatch during tool execution
-
-// After all tool calls in a turn complete, if EditBatch is non-empty:
-//   - if dry_run  → emit TurnEvent::DryRunDiff(String) for each pending write,
-//                    do not apply, clear batch.
-//   - if require_approval → emit TurnEvent::ApprovalRequired(EditBatch),
-//                    suspend until user responds via new TurnCommand::Approve /
-//                    TurnCommand::Reject channel (see Step 7).
-//   - otherwise   → call apply_batch(), emit TurnEvent::BatchApplied or
-//                    TurnEvent::BatchRolledBack.
-```
-
-```rust
-// src/types.rs  — new TurnEvent variants
-
 pub enum TurnEvent {
-    // …existing variants…
+    // ... existing variants unchanged ...
 
-    /// A unified diff to display (dry-run mode — nothing was written).
-    DryRunDiff { path: String, diff: String },
-
-    /// All edits in the batch were applied successfully.
-    BatchApplied { paths: Vec<String> },
-
-    /// A write failed; all already-written files were rolled back.
-    BatchRolledBack { failed_path: String, reason: String },
-
-    /// Edits are pending approval (--safe mode).
-    ApprovalRequired { paths: Vec<String> },
+    /// The provider failed transiently; the agent is about to retry.
+    Retrying {
+        attempt: u32,      // 1-indexed ("attempt 1 of 3")
+        max_retries: u32,
+        delay_ms: u64,     // actual delay that will be slept
+        reason: String,    // human-readable error that triggered the retry
+    },
 }
 ```
 
-```rust
-// src/main.rs  — CLI flags
-
-#[derive(Parser)]
-struct Args {
-    // …existing flags…
-
-    /// Require approval before applying any file edits.
-    #[arg(long)]
-    safe: bool,
-
-    /// Show a unified diff of all edits but do not write anything.
-    #[arg(long)]
-    dry_run: bool,
-
-    /// Revert the last batch of file edits.
-    #[arg(long)]
-    undo: bool,
-}
-```
+#### `turn_with_retry` in `src/turn.rs`
 
 ```rust
-// src/tui/events.rs  — /undo slash command
-
-// In handle_submit(), check for "/undo" before dispatching to turn().
-// Call undo_last(undo_dir) and push a ChatEntry reporting what was restored.
+/// Execute one agent turn with automatic retry on transient provider errors.
+///
+/// Wraps `turn()`. On a transient `ProviderError`, emits `TurnEvent::Retrying`,
+/// sleeps the computed backoff, then calls `turn()` again. On a permanent error
+/// or after exhausting retries, returns `Err`.
+///
+/// `event_tx` is an optional channel for emitting `TurnEvent::Retrying` events
+/// to the TUI *before* the sleep; callers that don't need live status may pass
+/// `None`.
+pub async fn turn_with_retry(
+    conv: Conversation,
+    provider: &dyn Provider,
+    tools: &ToolRegistry,
+    middleware: &Middleware,
+    retry_config: &RetryConfig,
+    event_tx: Option<&mpsc::Sender<TurnEvent>>,
+) -> Result<(Conversation, Vec<TurnEvent>)> { ... }
 ```
+
+### 2. Config integration
+
+`AppConfig` gains a `retry: RetryConfig` field (TOML section `[retry]`).
+`overlay_from_table` is extended to handle the `retry` key, following the same
+fine-grained overlay pattern already used for `context`, `skills`, etc.
+
+The `ap.toml.example` file is updated with a commented-out `[retry]` section.
+
+### 3. TUI wiring
+
+- `TuiApp::handle_ui_event` handles the new `TurnEvent::Retrying` variant:
+  - Sets `self.retry_status = Some(RetryStatus { attempt, max_retries })`.
+  - Sets `self.is_waiting = true` (already true; this is a no-op).
+- `TuiApp` gains `pub retry_status: Option<RetryStatus>`.
+- `RetryStatus` is a plain struct:
+  ```rust
+  pub struct RetryStatus {
+      pub attempt: u32,
+      pub max_retries: u32,
+  }
+  ```
+- `TurnEvent::TurnEnd` and `TurnEvent::Error` clear `retry_status` (set to `None`).
+- The status bar render function (`tui/ui.rs`) appends `retrying (N/M)...` to
+  the status text when `app.retry_status` is `Some`.
+
+### 4. Call-site wiring
+
+`handle_submit` in `tui/mod.rs` and `run_headless` in `main.rs` are updated to
+call `turn_with_retry` instead of `turn` directly, passing the `RetryConfig`
+from `conv.config.retry` and the `ui_tx` sender (TUI path) or `None` (headless
+path).
 
 ---
 
 ## Ordered Implementation Steps
 
-Each step must leave the project in a **compilable, all-tests-passing** state.
+Each step must leave the project in a compilable, test-passing state before
+moving to the next.
 
 ---
 
-### Step 1 — `EditingConfig` in `AppConfig`
+### Step 1 — `RetryConfig` struct + config integration
 
-**Files:** `src/config.rs`
+**Files changed:** `src/retry.rs` (new), `src/config.rs`, `src/lib.rs`,
+`ap.toml.example`
 
-1. Add `EditingConfig` struct with `require_approval: bool = false` and
-   `dry_run: bool = false`, both deriving `Serialize + Deserialize + Default`.
-2. Add `pub editing: EditingConfig` field to `AppConfig` (with `#[serde(default)]`).
-3. Extend `overlay_from_table` to handle `[editing]` section (same key-present
-   guard pattern used for every other section).
-4. Add unit tests in `config.rs`:
-   - `editing_config_defaults()` — `require_approval` false, `dry_run` false.
-   - `editing_config_toml_require_approval()` — parses `require_approval = true`.
-   - `editing_config_toml_dry_run()` — parses `dry_run = true`.
-   - `editing_config_missing_keys_preserve_defaults()` — empty `[editing]`
-     table leaves both fields at default.
-   - `editing_config_not_serialized_to_sessions()` — existing conversation JSON
-     without `"editing"` key deserializes without error.
+1. Create `src/retry.rs` containing only `RetryConfig` with `Default`,
+   `Serialize`, `Deserialize`, `Debug`, `Clone`.  No logic yet.
+2. Add `pub mod retry;` to `src/lib.rs`.
+3. Add `pub retry: RetryConfig` to `AppConfig`; derive it with `#[serde(default)]`.
+4. Extend `overlay_from_table` with a `retry` branch mirroring the `context`
+   branch (overlay only keys present in the TOML table).
+5. Add a commented `[retry]` section to `ap.toml.example`.
 
-**Acceptance criteria:** `cargo test config` passes; no other tests regress.
+**Tests to add in `src/retry.rs`:**
+- `retry_config_defaults` — `enabled=true`, `max_retries=3`,
+  `base_delay_ms=2000`, `max_delay_ms=60000`.
+- `retry_config_toml_overlay` — parse a TOML snippet, assert non-default values
+  land on `AppConfig`.
+- `retry_config_partial_overlay_preserves_defaults` — only `max_retries=5` in
+  TOML; `base_delay_ms` etc. keep defaults.
+- `retry_config_disabled` — `enabled = false` round-trips.
 
----
-
-### Step 2 — `src/editing/mod.rs` — pure data types + `unified_diff`
-
-**Files:** `src/editing/mod.rs` (new), `src/lib.rs`
-
-1. Create `src/editing/mod.rs`.  Add `pub mod editing;` to `src/lib.rs`.
-2. Implement `PendingWrite`, `ApplyResult`, `EditBatch` exactly as specified.
-3. Implement `EditBatch::add_write(self, pending: PendingWrite) -> Self`
-   (consuming, replaces existing entry for the same path).
-4. Implement `EditBatch::paths(&self) -> Vec<&PathBuf>`.
-5. Implement `unified_diff(old: &str, new: &str, path: &str) -> String`
-   — use the `similar` crate (add `similar = "2"` to `Cargo.toml`).
-   Format: standard unified diff header `--- a/<path>` / `+++ b/<path>`,
-   `@@ … @@` hunks.  Return `""` when `old == new`.
-6. Unit tests in `src/editing/mod.rs`:
-   - `edit_batch_add_write_appends()` — new path appended.
-   - `edit_batch_add_write_replaces_existing()` — same path replaces old entry.
-   - `edit_batch_paths_returns_all()` — `paths()` returns one entry per write.
-   - `unified_diff_empty_when_equal()` — same content → `""`.
-   - `unified_diff_shows_change()` — changed line appears in diff output.
-   - `unified_diff_added_file()` — empty old, non-empty new.
-   - `unified_diff_deleted_file()` — non-empty old, empty new.
-
-**Acceptance criteria:** `cargo test editing` passes.
+**Compile check:** `cargo test --lib` must pass with zero new warnings.
 
 ---
 
-### Step 3 — `apply_batch` + `undo_last`
+### Step 2 — `backoff_delay` and `parse_retry_after` pure functions
 
-**Files:** `src/editing/mod.rs`
+**Files changed:** `src/retry.rs`
 
-1. Implement `apply_batch(batch: &EditBatch, undo_dir: &Path) -> ApplyResult`
-   (async):
-   - Create `undo_dir` if absent.
-   - Before writing any file: serialize the entire batch's original-content
-     map to `<undo_dir>/last.json`  
-     (`{"<abs-path>": "<original_content_or_null>", …}`).
-   - Iterate `batch.writes` in order; for each:
-     - Create parent directories as needed.
-     - Write `new_content` to the path.
-     - On `Err`: roll back every file already written (restore from
-       `original_content` in the `PendingWrite`; delete if `None`), then
-       return `ApplyResult { written: already_written, error: Some((path, e)) }`.
-   - On full success: return `ApplyResult { written: all_paths, error: None }`.
-2. Implement `undo_last(undo_dir: &Path) -> anyhow::Result<Vec<PathBuf>>`:
-   - Read `<undo_dir>/last.json`.
-   - For each entry: if value is a string, write it back; if `null`, delete
-     the file (if it exists).
-   - Remove `last.json` after successful restore.
-   - Return the list of paths restored.
-3. Unit tests:
-   - `apply_batch_writes_all_files()` — two writes both appear on disk.
-   - `apply_batch_creates_parent_dirs()` — nested path created.
-   - `apply_batch_saves_undo_snapshot()` — `last.json` created in `undo_dir`.
-   - `apply_batch_rollback_on_write_failure()` — simulate failure for the
-     second file by using a read-only directory; first file is rolled back.
-   - `undo_last_restores_files()` — after `apply_batch`, `undo_last` restores.
-   - `undo_last_deletes_new_file()` — original_content `None` → file deleted.
-   - `undo_last_error_when_no_snapshot()` — `undo_dir` empty → `Err`.
+1. Add `backoff_delay(config: &RetryConfig, attempt: u32) -> Duration`.
+   Formula: `min(base_delay_ms * 2^attempt, max_delay_ms)`.  Use saturating
+   arithmetic (`u64::saturating_mul`, `u64::saturating_pow`) to avoid overflow
+   on large `attempt` values.
+2. Add `parse_retry_after(value: &str) -> Option<Duration>`.
+   - If the string parses as a `u64`, return `Duration::from_secs(n)`.
+   - If the string matches an HTTP-date (`%a, %d %b %Y %H:%M:%S GMT`), compute
+     seconds until that instant using `std::time::SystemTime`; return `None` if
+     the date is in the past.
+   - Otherwise return `None`.
+   - Keep the HTTP-date parsing minimal: use `std::time::SystemTime` and manual
+     RFC-2822 parsing — **do not add a new crate**.
 
-**Acceptance criteria:** `cargo test editing` passes.
+**Tests to add:**
+- `backoff_delay_attempt_0` → `base_delay_ms`.
+- `backoff_delay_attempt_1` → `2 * base_delay_ms`.
+- `backoff_delay_attempt_2` → `4 * base_delay_ms`.
+- `backoff_delay_capped_at_max` — attempt large enough that uncapped value
+  exceeds `max_delay_ms`; result must equal `max_delay_ms`.
+- `backoff_delay_no_overflow_on_huge_attempt` — attempt=100 must not panic.
+- `parse_retry_after_integer_seconds` → `Duration::from_secs(30)`.
+- `parse_retry_after_zero` → `Duration::ZERO`.
+- `parse_retry_after_invalid_returns_none` — `"bananas"` → `None`.
+
+**Compile check:** `cargo test --lib` must pass.
 
 ---
 
-### Step 4 — Update `edit` and `write` tool schemas + add `preview_edit`
+### Step 3 — `ProviderError` new variants + `classify_error`
 
-**Files:** `src/tools/edit.rs`, `src/tools/write.rs`,
-`src/tools/preview_edit.rs` (new), `src/tools/mod.rs`
+**Files changed:** `src/provider/mod.rs`, `src/retry.rs`
 
-1. **`edit` tool:**
-   - Change schema fields to `"file"`, `"old_str"`, `"new_str"`.
-   - In `execute()`, read params with fallback:
-     ```
-     file   = params["file"] ?? params["path"]
-     old_str = params["old_str"] ?? params["old_text"]
-     new_str = params["new_str"] ?? params["new_text"]
-     ```
-   - Existing behaviour (unique-match replace) unchanged.
-   - **Large-file warning:** if the file has >1000 lines AND `old_str`
-     contains >50 newlines, prepend  
-     `"[large-file warning: old_str spans >50 lines] "` to the success
-     message.
-2. **`write` tool:**
-   - Change schema field to `"file"` (with `"path"` fallback).
-3. **`preview_edit` tool (new):**
-   - Schema: `{ "file": string, "old_str": string, "new_str": string }`.
-   - `execute()`: read the file, substitute `old_str → new_str` (same unique-
-     match logic as `edit`), compute `unified_diff`, return the diff as
-     `ToolResult::ok(diff)`.  Write nothing.
-   - If `old_str` not found or matches multiple times, return `ToolResult::err`.
-4. Register `PreviewEditTool` in `ToolRegistry::with_defaults()` (5 tools now).
-5. Update `pub use` in `src/tools/mod.rs`.
-6. Tests:
-   - `edit_schema_uses_file_key()` — schema has `"file"` not `"path"`.
-   - `edit_accepts_legacy_path_key()` — `{"path":…, "old_text":…, "new_text":…}`
-     still works.
-   - `edit_large_file_warning()` — file with 1001 lines, `old_str` spanning
-     51 lines → success message contains `"large-file warning"`.
-   - `write_schema_uses_file_key()` — schema has `"file"`.
-   - `write_accepts_legacy_path_key()` — `{"path":…}` still works.
-   - `preview_edit_returns_diff()` — diff text contains `"-old"` and `"+new"`.
-   - `preview_edit_does_not_write()` — file on disk is unchanged after call.
-   - `preview_edit_errors_on_missing_old_str()` — error when `old_str` absent.
-   - `registry_with_defaults_has_five_schemas()` — replaces old 4-schema test.
+1. Add `Http`, `Network`, `InvalidRequest`, `RateLimited` variants to
+   `ProviderError` (see signatures above). Add `use std::time::Duration;` to
+   `src/provider/mod.rs`.
+2. Implement `classify_error(err: &ProviderError) -> RetryKind` in
+   `src/retry.rs`:
+   - `ProviderError::Http { status, .. }`: `429` or `500..=599` → `Transient`; all other 4xx → `Permanent`.
+   - `ProviderError::Network(_)` → `Transient`.
+   - `ProviderError::RateLimited { .. }` → `Transient`.
+   - `ProviderError::InvalidRequest(_)` → `Permanent`.
+   - `ProviderError::Aws(msg)` — inspect string:
+     - contains `"throttling"` (case-insensitive) or `"too many requests"` → `Transient`.
+     - contains `"timeout"` or `"connection"` → `Transient`.
+     - all other `Aws` errors → `Permanent` (conservative default).
+   - `ProviderError::ParseError(_)` → `Permanent`.
+   - `ProviderError::Serialization(_)` → `Permanent`.
+3. Add `RetryKind` to `src/retry.rs` (`Debug`, `Clone`, `PartialEq`).
 
-**Acceptance criteria:** `cargo test tools` passes; all old tool tests updated
-or passing.
+**Tests to add in `src/retry.rs`:**
+- `classify_http_429_is_transient`.
+- `classify_http_500_is_transient`.
+- `classify_http_503_is_transient`.
+- `classify_http_400_is_permanent`.
+- `classify_http_401_is_permanent`.
+- `classify_network_error_is_transient`.
+- `classify_rate_limited_is_transient`.
+- `classify_invalid_request_is_permanent`.
+- `classify_aws_throttling_is_transient` — `ProviderError::Aws("ThrottlingException: ...".into())`.
+- `classify_aws_timeout_is_transient`.
+- `classify_aws_generic_is_permanent`.
+- `classify_parse_error_is_permanent`.
+
+**Compile check:** `cargo test --lib` must pass; existing `ProviderError` tests
+must still pass.
 
 ---
 
-### Step 5 — New `TurnEvent` variants
+### Step 4 — `TurnEvent::Retrying` + `RetryStatus` TUI state
 
-**Files:** `src/types.rs`
+**Files changed:** `src/types.rs`, `src/tui/mod.rs`, `src/tui/ui.rs`
 
-1. Add to `TurnEvent`:
+1. Add `TurnEvent::Retrying { attempt, max_retries, delay_ms, reason }` variant
+   to `TurnEvent` in `src/types.rs`.
+2. Add `RetryStatus { pub attempt: u32, pub max_retries: u32 }` struct in
+   `src/tui/mod.rs` (above `TuiApp`).
+3. Add `pub retry_status: Option<RetryStatus>` field to `TuiApp`.
+4. Initialise `retry_status: None` in `TuiApp::new` and `TuiApp::headless`.
+5. Handle `TurnEvent::Retrying` in `TuiApp::handle_ui_event`:
+   - Set `self.retry_status = Some(RetryStatus { attempt, max_retries })`.
+6. Clear `self.retry_status = None` in the `TurnEvent::TurnEnd` and
+   `TurnEvent::Error` arms of `handle_ui_event`.
+7. In `tui/ui.rs`, extend `render_status_bar` (or `format_ctx_segment`) to
+   append `│ retrying (N/M)...` to the status bar text when
+   `app.retry_status.is_some()`. Add a public helper:
    ```rust
-   DryRunDiff { path: String, diff: String },
-   BatchApplied { paths: Vec<String> },
-   BatchRolledBack { failed_path: String, reason: String },
-   ApprovalRequired { paths: Vec<String> },
+   pub fn format_retry_segment(status: Option<&RetryStatus>) -> String { ... }
    ```
-2. All new variants must be `Clone`.
-3. Tests in `src/types.rs`:
-   - `turn_event_dry_run_diff_clonable()`
-   - `turn_event_batch_applied_clonable()`
-   - `turn_event_batch_rolled_back_clonable()`
-   - `turn_event_approval_required_clonable()`
-4. Update `route_headless_events` in `src/main.rs` to handle the four new
-   variants (print to stdout/stderr as appropriate; `BatchRolledBack` sets
-   `exit_code = 1`).
-5. Update `TuiApp::handle_ui_event` in `src/tui/mod.rs` to handle the four
-   new variants:
-   - `DryRunDiff` → push `ChatEntry::AssistantDone` showing the diff path +
-     a code block with the diff text.
-   - `BatchApplied` → push a notice like `"[Edited: a.rs, b.rs]"`.
-   - `BatchRolledBack` → push an error notice.
-   - `ApprovalRequired` → push a notice listing pending paths.
-6. Tests in `src/tui/mod.rs` for each new handler (headless app only).
+   Returns `""` when `None`, `"retrying (N/M)..."` when `Some`.
 
-**Acceptance criteria:** `cargo test types` and `cargo test tui` pass.
+**Tests to add:**
+- In `src/types.rs`: `turn_event_retrying_is_clonable` — construct the variant,
+  clone it, assert fields round-trip.
+- In `src/tui/mod.rs`:
+  - `handle_ui_event_retrying_sets_retry_status`.
+  - `handle_ui_event_turn_end_clears_retry_status`.
+  - `handle_ui_event_error_clears_retry_status`.
+  - `retry_status_none_by_default`.
+- In `src/tui/ui.rs`:
+  - `format_retry_segment_none_returns_empty`.
+  - `format_retry_segment_some_formats_correctly` — `Some(RetryStatus { attempt: 2, max_retries: 3 })` → `"retrying (2/3)..."`.
+
+**Compile check:** `cargo test --lib` must pass.
 
 ---
 
-### Step 6 — Wire `EditBatch` into `turn()`
+### Step 5 — `turn_with_retry` core logic
 
-**Files:** `src/turn.rs`
+**Files changed:** `src/turn.rs`
 
-`turn()` signature stays the same. Internally:
+1. Add `use tokio::sync::mpsc;` and import `RetryConfig`, `classify_error`,
+   `backoff_delay`, `RetryKind` from `crate::retry`.
+2. Implement `turn_with_retry`:
 
-1. Add a local `edit_batch: EditBatch` that accumulates writes produced by
-   `edit` and `write` tool calls.
-   - After each successful `edit` tool execution, read the new file content
-     from disk and add a `PendingWrite` with `original_content` = content
-     before the edit.
-   - After each successful `write` tool execution, add a `PendingWrite` with
-     `original_content` = file content before the write (or `None` if new).
-   - `preview_edit` and all other tools are not added to the batch.
-2. After all tool calls in a round complete (before looping back to the LLM):
-   - If `edit_batch` is non-empty:
-     - If `conv.config.editing.dry_run`: compute diffs, emit
-       `TurnEvent::DryRunDiff` for each pending write, **do not apply**,
-       clear batch.
-     - Otherwise: call `apply_batch(&batch, &undo_dir)`.
-       - On success: emit `TurnEvent::BatchApplied { paths }`.
-       - On rollback: emit `TurnEvent::BatchRolledBack { failed_path, reason }`,
-         also emit `TurnEvent::Error(…)` so the caller can short-circuit.
-   - `require_approval` path (Step 7) is a no-op stub that falls through to
-     normal apply for now.
-3. The `undo_dir` is `dirs::home_dir()/.ap/undo/` (create if absent).
-4. Tests in `src/turn.rs` (using `MockProvider` pattern already established):
-   - `turn_edit_batch_applied_after_edit_tool()` — mock provider emits a
-     `write` tool call; `TurnEvent::BatchApplied` present in events.
-   - `turn_dry_run_emits_diff_no_write()` — `conv.config.editing.dry_run =
-     true`; `TurnEvent::DryRunDiff` emitted; file on disk unchanged.
-   - `turn_batch_rolled_back_on_write_failure()` — simulate failure (read-only
-     target dir); `TurnEvent::BatchRolledBack` + `TurnEvent::Error` emitted.
+```rust
+pub async fn turn_with_retry(
+    conv: Conversation,
+    provider: &dyn Provider,
+    tools: &ToolRegistry,
+    middleware: &Middleware,
+    retry_config: &RetryConfig,
+    event_tx: Option<&mpsc::Sender<TurnEvent>>,
+) -> Result<(Conversation, Vec<TurnEvent>)> {
+    if !retry_config.enabled {
+        return turn(conv, provider, tools, middleware).await;
+    }
 
-**Acceptance criteria:** `cargo test turn` passes.
+    let mut attempt = 0u32;
+    loop {
+        match turn(conv.clone(), provider, tools, middleware).await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                // Extract ProviderError if present for classification
+                let kind = e
+                    .downcast_ref::<ProviderError>()
+                    .map(classify_error)
+                    .unwrap_or(RetryKind::Permanent);
 
----
+                if kind == RetryKind::Permanent || attempt >= retry_config.max_retries {
+                    return Err(e);
+                }
 
-### Step 7 — CLI flags: `--safe`, `--dry-run`, `--undo`
+                attempt += 1;
+                let delay = backoff_delay(retry_config, attempt - 1);
 
-**Files:** `src/main.rs`
+                // Emit Retrying event (best-effort — ignore send errors)
+                if let Some(tx) = event_tx {
+                    let _ = tx.try_send(TurnEvent::Retrying {
+                        attempt,
+                        max_retries: retry_config.max_retries,
+                        delay_ms: delay.as_millis() as u64,
+                        reason: e.to_string(),
+                    });
+                }
 
-1. Add `--safe` flag → sets `config.editing.require_approval = true`.
-2. Add `--dry-run` flag → sets `config.editing.dry_run = true`.
-3. Add `--undo` flag → runs `undo_last(undo_dir)` and exits before any turn:
-   - On success: print `"reverted: <path1>, <path2>, …"` to stdout; exit 0.
-   - On error: print error to stderr; exit 1.
-4. `require_approval = true` path in `turn()`: instead of calling
-   `apply_batch`, emit `TurnEvent::ApprovalRequired { paths }` and
-   **do not write** (stub — full interactive approval is a future feature;
-   this satisfies the spec's `--safe` flag by surfacing the pending writes
-   without applying them).
-5. Tests in `src/main.rs`:
-   - `dry_run_flag_sets_config()` — parse `["--dry-run"]`; confirm
-     `config.editing.dry_run == true`.
-   - `safe_flag_sets_config()` — parse `["--safe"]`; confirm
-     `config.editing.require_approval == true`.
-   - `undo_flag_parsed()` — parse `["--undo"]`; confirm flag is present.
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
+}
+```
 
-**Acceptance criteria:** `cargo test` (full suite) passes; `cargo build`
-produces a binary with `--help` listing all three new flags.
+> **Implementation note — `Retry-After` integration:**
+> `turn()` surfaces `ProviderError` as an `anyhow::Error` (via `?` in the stream
+> loop). `turn_with_retry` uses `anyhow::Error::downcast_ref::<ProviderError>`
+> to inspect it. For `ProviderError::Http { retry_after: Some(d), .. }` and
+> `ProviderError::RateLimited { retry_after_secs }`, check whether the
+> parsed/computed delay exceeds `retry_config.max_delay_ms`; if so, classify as
+> `Permanent` (fail immediately with a clear message).
 
----
-
-### Step 8 — `/undo` in the TUI
-
-**Files:** `src/tui/mod.rs`
-
-1. In `handle_submit()`, before dispatching to the turn task, check:
+3. Add helper in `classify_error` (or in `turn_with_retry`) to extract an
+   explicit delay from the error:
    ```rust
-   if trimmed == "/undo" { … }
+   /// If the error carries an explicit delay, return it; else return `None`.
+   pub fn explicit_delay(err: &ProviderError) -> Option<Duration> { ... }
    ```
-2. Call `ap::editing::undo_last(&undo_dir).await` (spawn a task or use
-   `tokio::task::spawn_blocking` as appropriate).
-3. On success: push a `ChatEntry::AssistantDone` with text  
-   `"[Reverted: <path1>, <path2>, …]"`.
-4. On error: push a `ChatEntry::AssistantDone` with  
-   `"[Undo failed: <error>]"`.
-5. In both cases, do **not** call `turn()`.
-6. Tests in `src/tui/mod.rs` (headless, using a temp undo dir):
-   - `undo_command_does_not_call_turn()` — after `/undo` with an empty undo
-     dir, `is_waiting` stays `false`.
-   - This test may use a test-only helper that injects a custom undo dir;
-     if that adds complexity, a smoke-test asserting the slash-command branch
-     is taken (no turn started) is sufficient.
+   Called by `turn_with_retry` to override the backoff delay when present.
 
-**Acceptance criteria:** `cargo test tui` passes.
+**Tests to add in `src/turn.rs`:**
+
+Use a `RetryableMockProvider` that fails N times before succeeding:
+
+```rust
+struct RetryableMockProvider {
+    fail_times: Arc<Mutex<u32>>,
+    error: ProviderError,   // error to return while failing
+    success_events: Vec<StreamEvent>,
+}
+```
+
+- `turn_with_retry_disabled_passes_through` — `RetryConfig { enabled: false, .. }`,
+  provider fails once → `turn_with_retry` returns `Err`.
+- `turn_with_retry_succeeds_on_second_attempt` — transient error once, then
+  success; assert `Ok` result and that events include `TurnEvent::Retrying`.
+- `turn_with_retry_exhausts_retries_returns_err` — transient error on every
+  call, `max_retries=2`; assert `Err` after 3 total attempts.
+- `turn_with_retry_permanent_error_fails_immediately` — `ProviderError::InvalidRequest`
+  on first call; assert `Err` with zero `Retrying` events emitted.
+- `turn_with_retry_retrying_event_carries_attempt_number` — two transient
+  failures then success; assert `Retrying.attempt` is 1 then 2.
+- `turn_with_retry_delay_exceeds_max_fails_immediately` — use
+  `ProviderError::RateLimited { retry_after_secs }` where `retry_after_secs *
+  1000 > max_delay_ms`; assert permanent failure.
+
+For sleep-free tests, override `tokio::time::sleep` using the
+`tokio::time::pause()` / `tokio::time::advance()` test helpers (available in
+`#[cfg(test)]`). Annotate tests with `#[tokio::test]`.
+
+**Compile check:** `cargo test --lib` must pass; all existing `turn.rs` tests
+must still pass.
 
 ---
 
-### Step 9 — Integration smoke test
+### Step 6 — Call-site wiring (TUI + headless) and `ap.toml.example` update
 
-**Files:** `tests/file_editing.rs` (new)
+**Files changed:** `src/tui/mod.rs`, `src/main.rs`, `ap.toml.example`
 
-Write an integration test (no network, uses `MockProvider`) that exercises the
-full pipeline end-to-end:
+1. In `TuiApp::handle_submit` (in `tui/mod.rs`), replace the call to `turn()`
+   with `turn_with_retry()`.  Pass:
+   - `retry_config`: cloned from `conv.config.retry`.
+   - `event_tx`: `Some(&tx)` so `Retrying` events flow to the UI channel.
+   Import `turn_with_retry` alongside `turn`.
 
-```
-1. Create a temp file with known content.
-2. Build a Conversation with editing.dry_run = false.
-3. Run turn() with a MockProvider that emits a `write` tool call.
-4. Assert TurnEvent::BatchApplied is in the events.
-5. Assert the file on disk has the new content.
-6. Run undo_last() on the undo dir.
-7. Assert the file is back to original content.
-```
+2. In `run_headless` (in `main.rs`), replace the call to `turn()` with
+   `turn_with_retry()`.  Pass:
+   - `retry_config`: `&conv_to_use.config.retry`.
+   - `event_tx`: `None` (headless; retry progress goes to stderr via the event
+     router below).
 
-A second test covers dry-run:
-```
-1. Same setup, but editing.dry_run = true.
-2. Assert TurnEvent::DryRunDiff is emitted.
-3. Assert file on disk is UNCHANGED.
-```
+3. In `route_headless_events`, handle `TurnEvent::Retrying`:
+   ```rust
+   TurnEvent::Retrying { attempt, max_retries, delay_ms, reason } => {
+       eprintln!(
+           "ap: retrying ({attempt}/{max_retries}) after {delay_ms}ms: {reason}"
+       );
+   }
+   ```
 
-**Acceptance criteria:** `cargo test --test file_editing` passes.
+4. Update `ap.toml.example`:
+   ```toml
+   [retry]
+   # enabled = true
+   # max_retries = 3
+   # base_delay_ms = 2000
+   # max_delay_ms = 60000
+   ```
 
----
+**Tests to add:**
+- In `src/tui/mod.rs` (unit tests, no real provider needed):
+  - `retry_status_cleared_on_turn_end_after_retrying` — push `Retrying` event
+    then `TurnEnd`; assert `retry_status` is `None`.
+  - `retry_status_cleared_on_error_after_retrying` — push `Retrying` then
+    `Error`; assert `retry_status` is `None`.
+- In `src/main.rs`:
+  - `route_headless_events_retrying_returns_0` — `Retrying` event alone produces
+    exit code 0 (not an error).
 
-## Acceptance Criteria (full feature)
-
-- [ ] **AC-1** `[editing]` section in TOML config parsed correctly; defaults
-  are `require_approval = false`, `dry_run = false`.
-- [ ] **AC-2** `EditBatch`, `PendingWrite`, `ApplyResult` compile and have
-  full unit-test coverage.
-- [ ] **AC-3** `unified_diff` returns `""` for identical content and a valid
-  unified diff for changes.
-- [ ] **AC-4** `apply_batch` writes all files atomically; on first failure
-  rolls back already-written files; saves `last.json` snapshot.
-- [ ] **AC-5** `undo_last` restores all files from `last.json`; deletes
-  newly-created files (original `null`); errors gracefully when no snapshot.
-- [ ] **AC-6** `edit` tool schema uses `"file"` / `"old_str"` / `"new_str"`;
-  still accepts legacy `"path"` / `"old_text"` / `"new_text"`.
-- [ ] **AC-7** `write` tool schema uses `"file"`; still accepts legacy `"path"`.
-- [ ] **AC-8** `preview_edit` tool returns unified diff, writes nothing.
-- [ ] **AC-9** `TurnEvent::DryRunDiff`, `BatchApplied`, `BatchRolledBack`,
-  `ApprovalRequired` all exist, are `Clone`, are handled in both headless
-  output routing and TUI event handler.
-- [ ] **AC-10** `turn()` accumulates edits into `EditBatch` and calls
-  `apply_batch` (or emits `DryRunDiff`) after each tool-execution round.
-- [ ] **AC-11** `--dry-run` CLI flag sets `editing.dry_run = true`; no files
-  written; `DryRunDiff` events emitted.
-- [ ] **AC-12** `--safe` CLI flag sets `editing.require_approval = true`;
-  `ApprovalRequired` event emitted; no files written.
-- [ ] **AC-13** `--undo` CLI flag restores last batch and exits.
-- [ ] **AC-14** `/undo` TUI slash command restores last batch and reports
-  result in the chat pane.
-- [ ] **AC-15** Integration test in `tests/file_editing.rs` passes for both
-  normal apply and dry-run paths.
-- [ ] **AC-16** `cargo build` produces a clean binary; `cargo test` passes
-  with zero failures; `cargo clippy -- -D warnings` produces no warnings.
-- [ ] **AC-17** `ToolRegistry::with_defaults()` now registers 5 tools
-  (`read`, `write`, `edit`, `bash`, `preview_edit`).
+**Compile check:** `cargo build` and `cargo test` must pass with no warnings
+under the existing `clippy` lint set.
 
 ---
 
-## Dependencies to add to `Cargo.toml`
+## Acceptance Criteria
 
-```toml
-# Unified diff generation
-similar = "2"
-```
+All of the following must hold before marking this item complete.
+
+1. **Config parses correctly.**
+   `AppConfig::load_with_paths` with a TOML file containing a full `[retry]`
+   table populates all four `RetryConfig` fields. A file with no `[retry]`
+   table yields the defaults (`enabled=true`, `max_retries=3`,
+   `base_delay_ms=2000`, `max_delay_ms=60000`). Partial overlay preserves
+   unset defaults.
+
+2. **`backoff_delay` is correct.**
+   Attempt 0 → `base_delay_ms`, attempt 1 → `2×base_delay_ms`, attempt 2 →
+   `4×base_delay_ms`. Capped at `max_delay_ms`. No panic on extreme attempt
+   numbers.
+
+3. **`parse_retry_after` parses integer seconds.**
+   `"30"` → `Duration::from_secs(30)`. Non-integer non-date → `None`.
+
+4. **`classify_error` is correct.**
+   `Http { status: 429 }` and `Http { status: 503 }` → `Transient`.
+   `Http { status: 400 }` and `Http { status: 401 }` → `Permanent`.
+   `Network(_)` → `Transient`. `InvalidRequest(_)` → `Permanent`.
+   `Aws("ThrottlingException")` → `Transient`.
+
+5. **`turn_with_retry` retries exactly N times on transient errors.**
+   With `max_retries=2` and a provider that always fails with a transient error,
+   `turn_with_retry` makes exactly 3 total attempts (1 initial + 2 retries)
+   before returning `Err`.
+
+6. **`turn_with_retry` does not retry permanent errors.**
+   A `ProviderError::InvalidRequest` on the first call returns `Err`
+   immediately, with `attempt_count == 1`.
+
+7. **`turn_with_retry` emits `TurnEvent::Retrying` with correct fields.**
+   On the first retry, `attempt=1`, `max_retries` matches config, `delay_ms`
+   matches `backoff_delay(config, 0)`.
+
+8. **Retry-After delay exceeding `max_delay_ms` fails immediately.**
+   `ProviderError::RateLimited { retry_after_secs: 7200 }` with
+   `max_delay_ms=60000` → permanent failure, no retry, clear error message.
+
+9. **TUI status bar shows retry progress.**
+   `TuiApp::handle_ui_event(TurnEvent::Retrying { attempt: 2, max_retries: 3, .. })`
+   sets `app.retry_status = Some(RetryStatus { attempt: 2, max_retries: 3 })`.
+   `format_retry_segment(Some(&status))` returns `"retrying (2/3)..."`.
+
+10. **Retry status clears on completion.**
+    After `TurnEnd` or `Error`, `app.retry_status` is `None`.
+
+11. **`cargo build` is clean.**
+    `cargo build 2>&1 | grep -E '^error'` produces no output. All existing tests
+    pass (`cargo test`).
+
+12. **Functional invariants preserved.**
+    `turn_with_retry` with `RetryConfig { enabled: false, .. }` behaves
+    identically to calling `turn()` directly.
 
 ---
 
-## File Map
+## Implementation Notes
 
-```
-src/
-  config.rs           ← add EditingConfig, overlay_from_table extension
-  editing/
-    mod.rs            ← NEW: PendingWrite, EditBatch, ApplyResult,
-                              unified_diff, apply_batch, undo_last
-  lib.rs              ← add: pub mod editing;
-  tools/
-    edit.rs           ← schema rename + legacy fallback + large-file warning
-    write.rs          ← schema rename + legacy fallback
-    preview_edit.rs   ← NEW
-    mod.rs            ← register PreviewEditTool, update with_defaults()
-  turn.rs             ← accumulate EditBatch, wire apply_batch / dry-run
-  types.rs            ← add 4 new TurnEvent variants
-  tui/
-    mod.rs            ← handle new TurnEvent variants, /undo command
-  main.rs             ← --safe, --dry-run, --undo flags
-tests/
-  file_editing.rs     ← NEW integration tests
-```
+- **No new crates.** All retry logic uses `std` and the already-present
+  `tokio`, `anyhow`, `thiserror`. Do not add `backoff`, `retry`, or any HTTP
+  date-parsing crate.
+- **Clippy compliance.** The project denies `unwrap_used`, `expect_used`,
+  `panic`. Use `?`, `unwrap_or`, `unwrap_or_else`, or explicit `match` in all
+  new code.
+- **Test sleep duration.** In unit tests use `tokio::time::pause()` before
+  calling `turn_with_retry` so the `tokio::time::sleep` calls complete
+  instantly. Reset with `tokio::time::resume()` after the test or rely on test
+  isolation.
+- **`ProviderError` is non-exhaustive in tests.** When adding new variants,
+  update the wildcard arm `_ => {}` in `classify_error` to remain exhaustive.
+- **`anyhow::Error` downcast.** `turn()` wraps `ProviderError` values via the
+  `?` operator in the stream loop, which calls `anyhow::Error::from`. Use
+  `err.downcast_ref::<ProviderError>()` in `turn_with_retry`; this correctly
+  recovers the original variant.
+- **Order of precedence for delay:** explicit `Retry-After` header >
+  computed backoff. When an explicit delay exceeds `max_delay_ms`, fail
+  immediately with the message:
+  `"provider requested retry delay of Xs which exceeds max_delay_ms (Yms)"`.
 
 ---
 
