@@ -19,7 +19,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 > **Bootstrap goal:** ap builds ap. Critical path: Provider abstraction → AGENTS.md → Self-hosting. Everything else is secondary until the loop flips.
 
-1. [x] **Provider abstraction** — Clean Provider trait with easy swap. Add OpenAI-compatible provider (works with any OpenAI API endpoint — OpenRouter, LM Studio, Ollama). Config: `[provider] backend = "openai-compat" base_url = "..." api_key = "..."`. Streaming via SSE. Same tool call format as Bedrock adapter.
+1. [ ] **Provider abstraction** — Clean Provider trait with easy swap. Add OpenAI-compatible provider (works with any OpenAI API endpoint — OpenRouter, LM Studio, Ollama). Config: `[provider] backend = "openai-compat" base_url = "..." api_key = "..."`. Streaming via SSE. Same tool call format as Bedrock adapter.
 
 2. [x] **AGENTS.md support** — Load and inject agent context from both global and project level, same convention as pi/claude code:
     - **Global:** `~/.ap/AGENTS.md` — always injected, defines persona, coding style, preferences
@@ -50,14 +50,14 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - TUI: `s` key opens session browser overlay — scrollable list, preview pane, Enter to resume, `f` to fork
     - Remove the `--session` opt-in flag concept entirely — persistence is always on
 
-6. [x] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
+6. [ ] **Model switching** — Swap models mid-session without restarting. Config-driven + runtime toggle:
     - `/model <id>` command in TUI input switches active model immediately
     - `--model` CLI flag overrides config at startup
     - Model displayed in TUI status bar
     - Works across all providers (Bedrock, OpenAI-compat)
     - Recent models remembered in `~/.ap/models.json` for quick switching
 
-7. [x] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
+7. [ ] **Kiro provider** — Add Kiro (AWS CodeWhisperer/Q) as a provider backend. Free access to 17 models including Claude Opus/Sonnet 4.6, DeepSeek 3.2, Kimi K2.5, Qwen3 Coder, GLM 4.7, and more. Auth via AWS Builder ID (SSO OIDC device code flow) or kiro-cli SQLite credential reuse.
 
     **API details** (from pi-provider-kiro reference impl at ~/Projects/pi-provider-kiro):
     - Endpoint: `https://q.us-east-1.amazonaws.com/generateAssistantResponse`
@@ -95,7 +95,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Clippy pedantic pass: fix all warnings, document any intentional allows
     - Write architectural decision records (ADRs) for key design choices in docs/
 
-9. [x] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
+9. [ ] **Slack bot integration** — ap as a Slack bot, similar to pi-slack-bot:
     - Slash command or @mention triggers ap in any channel or DM
     - Streaming responses posted as editable Slack messages (updated chunk by chunk)
     - Tool calls shown as threaded replies (collapsible)
@@ -104,7 +104,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - Socket Mode for no-ingress-required deployment
     - Runs as a daemon: `ap slack-bot`
 
-10. [x] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
+10. [ ] **Background process management + tmux sub-agents** — Non-blocking process execution with TUI awareness:
     - **Background bash tool** — `bash` tool gains `background: true` param. Spawns process detached, returns a `job_id` immediately. Claude can continue the conversation while it runs.
     - **Jobs panel in TUI** — New right-side panel (or toggleable overlay, `j` key) showing running/completed background jobs: name, pid, status, runtime, last line of output
     - **Job alerts** — When a background job completes (or errors), a non-blocking notification appears in the TUI status bar. Claude is also notified via a synthetic tool result injected into the next turn: `{"job_id": "...", "exit_code": 0, "stdout_tail": "..."}`
@@ -112,9 +112,9 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Job lifecycle:** `job list`, `job attach <id>` (open tmux pane), `job kill <id>`, `job logs <id>` — callable by Claude as tool calls or by user as `/job` commands in TUI input
     - Config: `[jobs] max_concurrent = 4, tmux_enabled = true, default_shell = "zsh"`
 
-11. [x] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
+11. [ ] **Streaming improvements** — Show token-by-token streaming in TUI conversation pane (not batched). Interrupt streaming with `Ctrl+C` (cancel current turn, keep conversation).
 
-12. [x] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
+12. [ ] **Semantic search over sessions + directories** — Built-in vector search, no external service required. Two search surfaces:
     - **Session memory**: index past `~/.ap/sessions/*.json` — search conversation history by meaning, auto-inject relevant past context into new sessions (`--recall` flag or always-on config)
     - **Directory search**: index configured paths (`[search] dirs = ["~/Documents", "./src"]`) for code and notes — expose as a built-in `search` tool Claude can call
     - Backend: local embeddings via `fastembed-rs` crate (all-MiniLM-L6-v2, runs on CPU, no API key). Index stored at `~/.ap/index/` as HNSW graph (using `instant-distance` or `usearch` crate)
@@ -123,7 +123,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - The `search` tool schema: `{ "query": string, "scope": "sessions" | "dirs" | "all", "top_k": number }`
     - Results injected as a system message block before the turn, labeled clearly so Claude knows the provenance
 
-13. [x] **LSP integration** — Connect to running language servers for code-aware context:
+13. [ ] **LSP integration** — Connect to running language servers for code-aware context:
     - `lsp` built-in tool: `{ "op": "hover" | "definition" | "references" | "diagnostics" | "completion", "file": "...", "line": N, "col": N }`
     - ap spawns or connects to an existing LSP server based on project language, detected from cwd
     - Results injected as tool output
@@ -137,12 +137,12 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
 16. [x] **Richer TUI** — Already merged.
 
-17. [x] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
+17. [ ] **Markdown + Mermaid rendering** — Render markdown in the conversation pane natively in the terminal.
 
-18. [x] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
+18. [ ] **Image support** — Pass images to Claude via `@image.png` syntax in prompt (like pi). Base64 encode, attach as vision message.
 
 
-19. [~] **Robust file editing** — Reliable, no-friction file edits by default:
+19. [ ] **Robust file editing** — Reliable, no-friction file edits by default:
     - **No approval prompts by default** — edits apply immediately, no confirmation dialogs. Trust the user. `--safe` flag available for those who want confirmation.
     - **Dry-run / diff preview** — `--dry-run` flag shows unified diff without writing. Claude can also call `preview_edit` tool to show before applying.
     - **Atomic multi-file apply** — all edits in a turn applied as a batch; if any write fails, roll back the whole set
@@ -160,7 +160,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Common patterns:** `ap "what's failing in my last brazil build"` auto-finds the build log; `ap "get the CloudWatch logs for service X"` uses current AWS profile
     - Config: `[aws] ada_enabled = true, default_profile = "auto"`
 
-21. [x] **Pi/Agent Skills compatibility** — Full support for the [Agent Skills standard](https://agentskills.io/specification) and pi skill conventions:
+21. [ ] **Pi/Agent Skills compatibility** — Full support for the [Agent Skills standard](https://agentskills.io/specification) and pi skill conventions:
 
     **Discovery (expand current flat `.md` loader):**
     - Support subdirectory skills: scan for `SKILL.md` recursively under each skills dir (e.g. `~/.ap/skills/my-skill/SKILL.md`)
@@ -192,7 +192,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
 
     **Reference:** pi skill spec at `~/Projects/pi-knowledge-search/node_modules/@mariozechner/pi-coding-agent/docs/skills.md`
 
-22. [ ] **Project-level config** — Per-project `ap.toml` that overlays global config:
+22. [x] **Project-level config** — Per-project `ap.toml` that overlays global config:
     - Locations: `~/.ap/config.toml` (global) and `.ap/config.toml` (project, cwd + ancestors up to git root)
     - Project config discovered automatically at startup; applied after global
     - Deep merge for nested tables (e.g. `[context]`, `[skills]`), scalar values override
