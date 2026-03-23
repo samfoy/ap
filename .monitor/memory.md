@@ -278,3 +278,15 @@ c6e7ea8 chore(backlog): add session persistence in --prompt mode as item 0
 f696785 chore: honest backlog reset + comprehensive PROMPT.md for full implementation loop
 45439ad chore: init Robust file editing
 eab8544 chore(monitor): complete Model switching
+
+## 2026-03-22 19:52 — Provider abstraction
+Review: Let me read the relevant files to assess the implementation.**Did not land.** The commit is scaffolding only — `ap/PROMPT.md` was rewritten into a detailed 8-step implementation spec for the OpenAI-compatible provider, and `BACKLOG.md` was flipped to `[~]` (in-progress), but **no Rust code was written**: `src/provider/openai.rs` doesn't exist, `ProviderConfig` still has no `base_url`/`api_key` fields, `build_provider` is absent, and `main.rs` still calls `BedrockProvider::new` directly.
+
+The gap is the entire feature — all 204 passing tests are pre-existing, none belong to this work. The loop produced a thorough spec in `PROMPT.md` but timed out or failed before executing any of the 8 steps it planned.
+Commits:
+e4487f0 chore: init Provider abstraction
+1e273c9 chore(monitor): complete Session persistence in --prompt mode
+cd227c5 chore: init Session persistence in --prompt mode
+cf46ba6 fix(monitor): drop pdd-to-code-assist hat — use ap via Bedrock directly
+c6e7ea8 chore(backlog): add session persistence in --prompt mode as item 0
+f696785 chore: honest backlog reset + comprehensive PROMPT.md for full implementation loop
