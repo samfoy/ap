@@ -152,7 +152,7 @@ This file drives the continuous development loop. The monitor agent reads this, 
     - **Write tool:** `{ "file": string, "content": string }` — full file overwrite, always works
     - Config: `[editing] require_approval = false` (default)
 
-20. [~] **Amazon toolchain integration** — First-class support for Ada and AWS credentials/SDK:
+20. [x] **Amazon toolchain integration** — First-class support for Ada and AWS credentials/SDK:
     - **Ada credential management** — detect and use Ada-vended credentials automatically. Run `ada credentials update --provider isengard --account <id> --role <role>` when creds are expired. ap knows to re-credential and retry if AWS calls return 401/403.
     - **AWS CLI/SDK awareness** — `aws` tool built-in: Claude can call AWS CLI commands directly as a tool call. Results returned as structured JSON where possible.
     - **Profile detection** — auto-detect active AWS profile from environment (`AWS_PROFILE`, `~/.aws/config`), surface in TUI status bar

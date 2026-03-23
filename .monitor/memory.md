@@ -200,3 +200,15 @@ Commits:
 08e7dd1 chore(monitor): start Model switching
 ad10615 chore(monitor): complete Conversation context management
 e88ee7b feat: merge Conversation context management
+
+## 2026-03-22 17:13 — Amazon toolchain integration
+Review: **The Amazon toolchain integration has not landed — only the plan has.** The top commit (`0d09b36`) adds nothing but a `PROMPT.md` describing the 8-step implementation (AwsConfig, AwsTool, Ada retry, Brazil workspace, TUI profile indicator), and there's no `src/` directory at all, meaning zero code has been written yet. The bulk of the log is actually the preceding "Robust file editing" feature merge plus housekeeping (gitignore, scratchpad cleanup).
+
+**Gap:** The goal is entirely unstarted from a code perspective. PROMPT.md is the spec for the next loop to execute, not evidence of completion.
+Commits:
+0d09b36 chore: init Amazon toolchain integration
+102221c chore(monitor): complete Robust file editing
+399cb42 feat: merge Robust file editing
+0beadea chore: strip ephemeral state before merge
+bd0de21 chore(monitor): start Robust file editing
+8d59311 chore: improve .gitignore — exclude target/, scratchpad, monitor state
