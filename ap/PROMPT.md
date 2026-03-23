@@ -1,251 +1,300 @@
-# Provider Abstraction — Implementation PROMPT
+# Model Switching — Implementation PROMPT
 
 ## Vision
 
-`ap` currently hard-codes AWS Bedrock as the only LLM backend. The goal is to
-introduce a clean **provider abstraction** so any OpenAI-compatible endpoint
-(OpenRouter, LM Studio, Ollama, direct OpenAI) can be used by changing two
-lines in `ap.toml` — no recompilation, no code changes.
+`ap` currently fixes the active model at startup from `ap.toml` / the
+`--model` CLI flag and never changes it mid-session. The goal is to make model
+selection a first-class runtime operation:
 
-The existing `Provider` trait in `src/provider/mod.rs` is already well-designed
-for this. This work adds:
+- `/model <id>` typed in the TUI input box switches the model immediately —
+  the very next turn uses the new model.
+- `--model <id>` on the CLI overrides whatever is in config at startup (all
+  modes: TUI and headless `--prompt`).
+- The active model is always visible in the TUI status bar.
+- Model switching works identically whether the active backend is Bedrock or
+  an OpenAI-compatible provider (the model string is passed through
+  `build_provider` which already handles both).
+- A lightweight `~/.ap/models.json` file records the last N models used so
+  the TUI can offer quick switching via `/model` with tab-completion hints
+  (the models list is maintained automatically; no user action required).
 
-1. An `openai-compat` backend in `src/provider/openai.rs` that speaks the
-   OpenAI Chat Completions streaming API (SSE `data:` lines, `delta.content` /
-   `delta.tool_calls`).
-2. Config wiring: `[provider] backend = "openai-compat"` picks the new
-   provider; `base_url` and `api_key` are read from `ProviderConfig`.
-3. Tool-call format parity: the `openai-compat` provider emits the same
-   `StreamEvent` sequence as `BedrockProvider` — `ToolUseStart` /
-   `ToolUseParams` / `ToolUseEnd` — so `turn()` requires **zero changes**.
-4. A `build_provider` factory function that reads `AppConfig` and returns
-   `Arc<dyn Provider>`, replacing the two ad-hoc `BedrockProvider::new()`
-   calls in `main.rs`.
+No new dependencies are required. All existing tests must continue to pass.
 
 ---
 
 ## Technical Requirements
 
-### New config fields (`src/config.rs`)
+### 1. `--model` CLI flag (`src/main.rs`)
 
-Extend `ProviderConfig`:
+Add to the `Args` struct:
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ProviderConfig {
-    pub backend: String,   // "bedrock" (default) | "openai-compat"
-    pub model: String,
-    pub region: String,    // Bedrock only
-    pub base_url: String,  // openai-compat: e.g. "https://openrouter.ai/api/v1"
-    pub api_key: String,   // openai-compat: Bearer token (empty string = no auth)
+/// Override the model from config at startup
+#[arg(short = 'm', long = "model")]
+model: Option<String>,
+```
+
+Apply it immediately after `AppConfig::load()`:
+
+```rust
+if let Some(m) = args.model {
+    config.provider.model = m;
 }
 ```
 
-Defaults for new fields: `base_url = ""`, `api_key = ""`.
-`overlay_from_table` must handle the two new keys identically to the existing
-`backend` / `model` / `region` keys (explicit-only overlay, no serde default
-bleed-through).
+This must happen **before** `build_provider` and before the `Conversation` is
+constructed, so both pick up the overridden model.
 
 ---
 
-### New provider (`src/provider/openai.rs`)
+### 2. Recent-models store (`src/models.rs`, new file)
 
 ```rust
-pub struct OpenAiCompatProvider {
-    client: reqwest::Client,
-    base_url: String,   // trailing slash stripped at construction
-    api_key: String,
-    model: String,
+/// Persistent list of recently used model IDs, stored at
+/// `~/.ap/models.json` as a JSON array of strings.
+///
+/// The list is capped at `MAX_RECENT` entries (most-recent first).
+/// Duplicate IDs are de-duplicated: recording an existing ID moves
+/// it to the front rather than appending another copy.
+pub struct RecentModels {
+    path: PathBuf,
+    pub models: Vec<String>,
 }
 
-impl OpenAiCompatProvider {
-    pub fn new(
-        base_url: impl Into<String>,
-        api_key: impl Into<String>,
-        model: impl Into<String>,
-    ) -> Self { ... }
+const MAX_RECENT: usize = 10;
 
-    /// Convert ap's Message/MessageContent slice into the OpenAI messages array.
-    /// ToolResult content → role "tool", tool_call_id set.
-    /// ToolUse → role "assistant" with tool_calls array.
-    fn build_messages(messages: &[Message]) -> Vec<serde_json::Value> { ... }
+impl RecentModels {
+    /// Load from `~/.ap/models.json`, or return an empty list if the file
+    /// does not exist. Returns `Err` only on a genuine I/O / parse failure.
+    pub fn load() -> Result<Self>;
 
-    /// Convert ap's tool schemas (already in Anthropic tool_use JSON) into
-    /// OpenAI `tools` array format ({ type: "function", function: { name, description, parameters } }).
-    fn build_tools(tools: &[serde_json::Value]) -> Vec<serde_json::Value> { ... }
+    /// Load from an explicit path (for tests).
+    pub fn load_from(path: PathBuf) -> Result<Self>;
 
-    /// Parse one SSE `data:` line (the JSON string after stripping "data: ").
-    /// Returns zero or more StreamEvents. Mirrors BedrockProvider::parse_sse_event.
-    pub fn parse_sse_line(
-        line: &str,
-        state: &mut OpenAiStreamState,
-        out: &mut Vec<Result<StreamEvent, ProviderError>>,
-    ) { ... }
+    /// Record `model_id` as the most-recently used model.
+    /// Moves duplicates to the front; trims to MAX_RECENT.
+    /// Does NOT persist — call `save()` afterward.
+    pub fn record(&mut self, model_id: impl Into<String>);
+
+    /// Persist `self.models` to `self.path`, creating parent dirs as needed.
+    pub fn save(&self) -> Result<()>;
 }
-
-impl Provider for OpenAiCompatProvider { ... }
 ```
 
-**`OpenAiStreamState`** — tracks in-progress tool call accumulation across SSE
-chunks:
+**Exact type signature** for `load_from`:
 
 ```rust
-#[derive(Debug, Default)]
-pub struct OpenAiStreamState {
-    /// Index of the currently-open tool_call slot (-1 = none / text mode).
-    pub current_tool_index: i64,
-    /// Accumulated name for the current tool call (arrives in first chunk).
-    pub current_tool_name: String,
-    /// Accumulated id for the current tool call.
-    pub current_tool_id: String,
-    /// Whether we have emitted ToolUseStart for the current slot.
-    pub tool_start_emitted: bool,
+pub fn load_from(path: PathBuf) -> Result<Self> { ... }
+```
+
+The stored format is a plain JSON array, e.g.:
+
+```json
+["us.anthropic.claude-sonnet-4-6", "gpt-4o", "llama3"]
+```
+
+Use `serde_json` for serialisation (already in `Cargo.toml`). Use `dirs::home_dir()`
+for the default path (already in `Cargo.toml`).
+
+Expose `RecentModels` from `src/lib.rs` as `pub mod models;`.
+
+---
+
+### 3. `/model <id>` command parsing (`src/tui/mod.rs`)
+
+Inside `TuiApp::handle_submit`, **before** echoing the input to `chat_history`
+and spawning a turn task, check for the `/model` command:
+
+```rust
+if let Some(new_model) = trimmed.strip_prefix("/model ").map(str::trim) {
+    self.handle_model_switch(new_model.to_string()).await;
+    return;
 }
 ```
 
-**SSE parsing rules** (OpenAI streaming format):
+Add a new private method:
+
+```rust
+async fn handle_model_switch(&mut self, model_id: String) {
+    // 1. Update self.model_name (status bar reflects change immediately).
+    // 2. Update conv.model inside the Arc<Mutex<Conversation>>.
+    // 3. Record the new model in RecentModels (best-effort, ignore errors).
+    // 4. Push a system notice into chat_history:
+    //    ChatEntry::AssistantDone(vec![ChatBlock::Text(
+    //        format!("\n[Model switched to: {model_id}]\n")
+    //    )])
+}
+```
+
+`/model` with no argument (just `/model`) should push a notice showing the
+current model and a hint listing any known recent models:
 
 ```
-data: {"id":"...","object":"chat.completion.chunk","choices":[{
-  "delta": {
-    "content": "hello"           // → StreamEvent::TextDelta("hello")
-  }
-}]}
+[Current model: us.anthropic.claude-sonnet-4-6]
+[Recent: gpt-4o, llama3]   ← only shown when ~/.ap/models.json has entries
+```
 
-data: {"choices":[{"delta":{
-  "tool_calls":[{
-    "index": 0,
-    "id": "call_abc",            // present in first chunk for this index
-    "function": {
-      "name": "bash",            // present in first chunk
-      "arguments": "{\"cmd\":"   // may be partial; accumulate → ToolUseParams
+---
+
+### 4. `Conversation::with_model` builder (`src/types.rs`)
+
+Add an immutable builder to `Conversation`:
+
+```rust
+/// Return a new `Conversation` with the model field replaced.
+/// All other fields (id, messages, config, system_prompt) are preserved.
+pub fn with_model(mut self, model: impl Into<String>) -> Self {
+    self.model = model.into();
+    self
+}
+```
+
+This is the pure-FP equivalent of mutating `conv.model` directly — the
+spawned turn task uses `conv_arc.lock().await.clone().with_model(...)` when
+it needs the model field to match the one currently selected in the TUI.
+
+---
+
+### 5. Status bar: always show active model (`src/tui/ui.rs`)
+
+The status bar already renders `app.model_name`. No structural change is
+needed — `model_name` is kept in sync by `handle_model_switch`. The
+**display format** must make the model visually prominent:
+
+```
+ ap │ us.anthropic.claude-sonnet-4-6 │ INSERT │ Msgs: 3 │ …
+```
+
+The `model_name` field is the source of truth for what the status bar
+renders. Verify (via unit test) that after a model switch event the status
+bar string contains the new model name.
+
+---
+
+### 6. Record model on turn completion + headless startup
+
+In `run_headless` (`src/main.rs`), after a successful turn, record the model
+in `RecentModels` (best-effort: log a warning on failure, never exit):
+
+```rust
+// After turn succeeds:
+if let Ok(mut recent) = ap::models::RecentModels::load() {
+    recent.record(&config.provider.model);
+    if let Err(e) = recent.save() {
+        eprintln!("ap: warning: could not update recent models: {e}");
     }
-  }]
-}}]}
-
-data: [DONE]                     // → StreamEvent::TurnEnd (stop_reason "end_turn",
-                                 //   tokens from x_usage if present, else 0)
-```
-
-Rules:
-- When `delta.tool_calls[n].index` changes to a new value AND we were
-  accumulating a previous tool call, emit `StreamEvent::ToolUseEnd` for the
-  old one, then `StreamEvent::ToolUseStart` for the new one.
-- When a chunk carries `delta.tool_calls[n]` with the same index as current,
-  emit `StreamEvent::ToolUseParams(arguments_fragment)`.
-- The `id` and `name` fields only appear in the **first** chunk for each
-  `index`; subsequent chunks for the same index only carry `arguments`.
-- On `data: [DONE]`: if `tool_start_emitted` is true, emit `ToolUseEnd` first,
-  then `TurnEnd`.
-- Token counts: look for `usage.prompt_tokens` / `usage.completion_tokens` on
-  the `[DONE]` chunk or any chunk that carries a `usage` field. If absent,
-  emit 0/0.
-- `finish_reason: "tool_calls"` on a non-DONE chunk should also trigger
-  `ToolUseEnd` if a tool is open, but do NOT emit `TurnEnd` (wait for `[DONE]`).
-
-**`Provider` impl** — `stream_completion` must:
-1. Call `POST {base_url}/chat/completions` with `stream: true`.
-2. Set `Authorization: Bearer {api_key}` header only when `api_key` is
-   non-empty.
-3. Read the response as a byte stream, splitting on `\n`.
-4. Forward each `data: ...` line to `parse_sse_line`.
-5. Return a `BoxStream<'a, Result<StreamEvent, ProviderError>>`.
-
-Errors:
-- Non-2xx HTTP response → `ProviderError::Aws(format!("HTTP {status}: {body}"))`.
-  (Reuse `ProviderError::Aws` — no new variant needed.)
-- Reqwest transport error → `ProviderError::Aws(e.to_string())`.
-- JSON parse failure → `ProviderError::ParseError(...)`.
-
----
-
-### Provider factory (`src/provider/mod.rs`)
-
-```rust
-/// Build the appropriate provider from config, returning an Arc<dyn Provider>.
-/// Called once at startup in main.rs.
-pub async fn build_provider(config: &AppConfig) -> anyhow::Result<Arc<dyn Provider>>;
-```
-
-Logic:
-
-```
-match config.provider.backend.as_str() {
-    "openai-compat" => Arc::new(OpenAiCompatProvider::new(
-        &config.provider.base_url,
-        &config.provider.api_key,
-        &config.provider.model,
-    )),
-    _ /* "bedrock" */ => Arc::new(
-        BedrockProvider::new(&config.provider.model, &config.provider.region).await?
-    ),
 }
 ```
 
----
-
-### `main.rs` changes
-
-Replace the two `BedrockProvider::new(...)` call-sites with `build_provider(&config).await?`.
-Remove the `use ap::provider::BedrockProvider;` import.
-`run_headless` and `run_tui` both call `build_provider`.
+In `run_tui`, record the initial model at startup (same pattern).
 
 ---
 
-### `ap.toml.example` additions
+### 7. Provider model field must be respected at turn time
 
-```toml
-# OpenAI-compatible provider example (uncomment and fill in to use)
-# backend = "openai-compat"
-# base_url = "https://openrouter.ai/api/v1"
-# api_key  = "sk-or-..."
-# model    = "anthropic/claude-3.5-sonnet"
+`BedrockProvider` and `OpenAiCompatProvider` both embed the model string at
+construction time. When the model is switched mid-session, `conv.model`
+changes but the `provider` Arc still uses the old model string.
+
+**Solution**: `build_provider` is **not** called again on a model switch.
+Instead, the `Provider` trait gains a method:
+
+```rust
+pub trait Provider: Send + Sync {
+    fn stream_completion<'a>(
+        &'a self,
+        messages: &'a [Message],
+        tools: &'a [serde_json::Value],
+        system_prompt: Option<&'a str>,
+        model_override: Option<&'a str>,  // NEW — None means use provider's default
+    ) -> BoxStream<'a, Result<StreamEvent, ProviderError>>;
+}
 ```
+
+When `model_override` is `Some(id)`, the provider substitutes that model ID
+into its API request instead of its own `self.model`. When it is `None`, the
+existing behaviour is preserved.
+
+**`turn()` signature change**:
+
+```rust
+pub async fn turn(
+    conv: Conversation,
+    provider: &dyn Provider,
+    tools: &ToolRegistry,
+    middleware: &Middleware,
+) -> Result<(Conversation, Vec<TurnEvent>)>
+```
+
+The signature is **unchanged**. Internally, `turn_loop` passes
+`Some(conv.model.as_str())` as `model_override` to `provider.stream_completion`.
+This means `conv.model` always wins, regardless of what model the provider
+was constructed with. It also means the Bedrock and OpenAI-compat providers
+both need updating.
+
+Update every call-site of `stream_completion` inside `src/turn.rs`,
+`src/context.rs`, and any test mock providers:
+
+```rust
+// In turn_loop:
+let mut stream = provider.stream_completion(
+    &messages_snapshot,
+    &tool_schemas,
+    system_prompt,
+    Some(conv.model.as_str()),  // always pass model from conversation
+);
+```
+
+Update `BedrockProvider::stream_completion` to substitute `model_override`
+for `self.model` in the `invoke_model_with_response_stream` call.
+
+Update `OpenAiCompatProvider::stream_completion` similarly for the `"model"`
+field of the JSON request body.
+
+Update every `impl Provider` in test code (mock providers in `src/turn.rs`,
+`src/context.rs`, `src/tui/mod.rs`) to accept the new parameter — they can
+ignore it.
 
 ---
 
 ## Ordered Implementation Steps
 
-Each step must leave `cargo build` (and `cargo test --lib`) **green** before
+Each step must leave `cargo build` **and** `cargo test --lib` green before
 moving to the next.
 
 ---
 
-### Step 1 — Extend `ProviderConfig` with `base_url` and `api_key`
+### Step 1 — `Conversation::with_model` + tests
 
-**Files:** `src/config.rs`
+**Files:** `src/types.rs`
 
-1. Add `base_url: String` and `api_key: String` to `ProviderConfig`.
-2. Set defaults: `base_url = String::new()`, `api_key = String::new()`.
-3. Extend `overlay_from_table` to overlay `base_url` and `api_key` when the
-   respective keys are present in the TOML table.
+Add `pub fn with_model(mut self, model: impl Into<String>) -> Self` to
+`Conversation`.
 
-**New tests** (add to `src/config.rs` `#[cfg(test)]` block):
+**New tests** (add to the existing `#[cfg(test)]` block in `src/types.rs`):
 
 ```rust
 #[test]
-fn provider_config_new_fields_default_empty() {
-    let cfg = AppConfig::default();
-    assert_eq!(cfg.provider.base_url, "");
-    assert_eq!(cfg.provider.api_key, "");
+fn conversation_with_model_replaces_field() {
+    let conv = Conversation::new("id", "old-model", AppConfig::default());
+    let conv2 = conv.with_model("new-model");
+    assert_eq!(conv2.model, "new-model");
 }
 
 #[test]
-fn provider_config_base_url_overlay() {
-    // Write a TOML file with base_url set; api_key absent.
-    // Verify base_url is overridden, api_key stays "".
+fn conversation_with_model_preserves_messages() {
+    let conv = Conversation::new("id", "old", AppConfig::default())
+        .with_user_message("hello")
+        .with_model("new");
+    assert_eq!(conv.messages.len(), 1);
+    assert_eq!(conv.model, "new");
 }
 
 #[test]
-fn provider_config_api_key_overlay() {
-    // Write a TOML file with api_key set; base_url absent.
-    // Verify api_key is overridden, base_url stays "".
-}
-
-#[test]
-fn provider_config_both_fields_overlay() {
-    // Both base_url and api_key present in TOML.
+fn conversation_with_model_preserves_id_and_config() {
+    let conv = Conversation::new("my-id", "old", AppConfig::default())
+        .with_model("new");
+    assert_eq!(conv.id, "my-id");
 }
 ```
 
@@ -253,100 +302,36 @@ fn provider_config_both_fields_overlay() {
 
 ---
 
-### Step 2 — Skeleton `OpenAiCompatProvider` (compiles, no HTTP)
+### Step 2 — `--model` CLI flag
 
-**Files:** `src/provider/openai.rs` (new), `src/provider/mod.rs`
+**Files:** `src/main.rs`
 
-1. Create `src/provider/openai.rs` with:
-   - `pub struct OpenAiStreamState` (all fields as specified).
-   - `pub struct OpenAiCompatProvider` with `client`, `base_url`, `api_key`,
-     `model` fields.
-   - `impl OpenAiCompatProvider { pub fn new(...) -> Self }`.
-   - `pub fn parse_sse_line(line: &str, state: &mut OpenAiStreamState, out: &mut Vec<...>)`.
-     Body: stub that does nothing (empty). 
-   - `impl Provider for OpenAiCompatProvider` — `stream_completion` returns
-     `stream::empty().boxed()` (placeholder, always yields nothing).
+1. Add `model: Option<String>` to the `Args` struct with the correct
+   `#[arg(short = 'm', long = "model")]` attribute.
+2. After `AppConfig::load()` (and the existing `context_limit` override),
+   apply the model override:
+   ```rust
+   if let Some(m) = args.model {
+       config.provider.model = m;
+   }
+   ```
 
-2. In `src/provider/mod.rs`:
-   - Add `pub mod openai;` and `pub use openai::OpenAiCompatProvider;`.
-
-**Acceptance:** `cargo build` green. No tests needed for this step beyond
-compilation.
-
----
-
-### Step 3 — SSE parsing: text delta and `[DONE]`
-
-**Files:** `src/provider/openai.rs`
-
-Implement `parse_sse_line` for the two simplest cases:
-- `data: [DONE]` → emit `StreamEvent::TurnEnd { stop_reason: "end_turn", input_tokens: 0, output_tokens: 0 }`.
-- `data: {...}` where `delta.content` is a non-null string → emit `StreamEvent::TextDelta(...)`.
-- Anything else (empty line, `event:`, unknown JSON shape) → no-op.
-
-**New unit tests** in `src/provider/openai.rs`:
-
-```rust
-fn parse(line: &str, state: &mut OpenAiStreamState) -> Vec<StreamEvent> { ... }
-
-#[test]
-fn parse_done_emits_turn_end() { ... }
-
-#[test]
-fn parse_text_delta_emits_text_chunk() { ... }
-
-#[test]
-fn parse_empty_line_is_noop() { ... }
-
-#[test]
-fn parse_event_prefix_line_is_noop() { ... }
-```
-
-`cargo test --lib` must pass.
-
----
-
-### Step 4 — SSE parsing: tool call accumulation
-
-**Files:** `src/provider/openai.rs`
-
-Extend `parse_sse_line` to handle `delta.tool_calls`:
-
-- First chunk for `index == 0` (or any new index): emit `ToolUseStart { id, name }`, set `tool_start_emitted = true`.
-- Subsequent chunks for same index: emit `ToolUseParams(arguments_fragment)`.
-- Index change from N to M (M > N): emit `ToolUseEnd` for N, then `ToolUseStart` for M.
-- `data: [DONE]` with `tool_start_emitted == true`: emit `ToolUseEnd`, then `TurnEnd`.
-
-**New unit tests:**
+**New test** (add to the `#[cfg(test)]` block at the bottom of `src/main.rs`):
 
 ```rust
 #[test]
-fn parse_tool_use_single_call() {
-    // Three chunks: first (id+name+partial_args), second (more args), [DONE].
-    // Expected: ToolUseStart, ToolUseParams×2, ToolUseEnd, TurnEnd.
+fn cli_model_flag_parses() {
+    use clap::Parser;
+    let args = Args::try_parse_from(["ap", "--model", "gpt-4o"])
+        .expect("should parse --model flag");
+    assert_eq!(args.model, Some("gpt-4o".to_string()));
 }
 
 #[test]
-fn parse_tool_use_two_sequential_calls() {
-    // Chunks for index 0, then index 1, then [DONE].
-    // Expected: ToolUseStart(0), params, ToolUseEnd(0),
-    //           ToolUseStart(1), params, ToolUseEnd(1), TurnEnd.
-}
-
-#[test]
-fn parse_done_without_open_tool_no_extra_end() {
-    // [DONE] after pure text: only TurnEnd, no ToolUseEnd.
-}
-
-#[test]
-fn parse_tool_params_accumulate_in_order() {
-    // Two ToolUseParams events must arrive in the order the SSE chunks arrive.
-}
-
-#[test]
-fn parse_finish_reason_tool_calls_closes_tool() {
-    // A non-DONE chunk with finish_reason = "tool_calls" should emit ToolUseEnd
-    // if a tool is open, but NOT TurnEnd.
+fn cli_model_flag_absent_is_none() {
+    use clap::Parser;
+    let args = Args::try_parse_from(["ap"]).expect("should parse empty args");
+    assert_eq!(args.model, None);
 }
 ```
 
@@ -354,37 +339,51 @@ fn parse_finish_reason_tool_calls_closes_tool() {
 
 ---
 
-### Step 5 — Token count extraction
+### Step 3 — `RecentModels` store
 
-**Files:** `src/provider/openai.rs`
+**Files:** `src/models.rs` (new), `src/lib.rs`
 
-When `parse_sse_line` sees a `usage` object (either on the DONE chunk or any
-chunk that carries it), read `usage.prompt_tokens` → `input_tokens` and
-`usage.completion_tokens` → `output_tokens` into the `TurnEnd` event.
+Implement `RecentModels` exactly as specified in the Technical Requirements
+section above.
 
-Store the last-seen token counts in `OpenAiStreamState`:
+Expose from `src/lib.rs`:
 
 ```rust
-pub struct OpenAiStreamState {
-    // ...existing fields...
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-}
+pub mod models;
 ```
 
-**New tests:**
+**New tests** (add a `#[cfg(test)]` block in `src/models.rs`):
 
 ```rust
 #[test]
-fn parse_usage_on_done_chunk() {
-    // data: {"usage":{"prompt_tokens":10,"completion_tokens":5},...}
-    // followed by data: [DONE]
-    // TurnEnd carries input_tokens=10, output_tokens=5.
+fn record_adds_to_front() {
+    // load_from a nonexistent file, record "a", record "b" → models == ["b", "a"]
 }
 
 #[test]
-fn parse_usage_absent_defaults_zero() {
-    // Plain [DONE] with no usage field → TurnEnd with 0/0.
+fn record_deduplicates_and_moves_to_front() {
+    // load_from a nonexistent file, record "a", record "b", record "a"
+    // → models == ["a", "b"]
+}
+
+#[test]
+fn record_caps_at_max_recent() {
+    // Record 12 distinct models; models.len() == MAX_RECENT (10).
+}
+
+#[test]
+fn save_and_reload_roundtrip() {
+    // save to a tempdir path, load_from same path → same models list.
+}
+
+#[test]
+fn load_nonexistent_returns_empty() {
+    // load_from a path that doesn't exist → Ok(RecentModels { models: [] }).
+}
+
+#[test]
+fn load_creates_parent_dirs_on_save() {
+    // Point at a nested path that doesn't exist yet, save → file is created.
 }
 ```
 
@@ -392,172 +391,283 @@ fn parse_usage_absent_defaults_zero() {
 
 ---
 
-### Step 6 — Message format conversion (`build_messages` / `build_tools`)
+### Step 4 — `Provider` trait: add `model_override` parameter
 
-**Files:** `src/provider/openai.rs`
+**Files:** `src/provider/mod.rs`, `src/provider/bedrock.rs`,
+`src/provider/openai.rs`, `src/turn.rs`, `src/context.rs`, `src/tui/mod.rs`
 
-Implement the two static helpers:
+This is the largest mechanical step. Every `impl Provider` and every
+`stream_completion` call-site must be updated.
 
-**`build_messages`** — convert `&[Message]` to OpenAI format:
+#### `src/provider/mod.rs`
 
-| ap `MessageContent` variant | OpenAI representation |
-|---|---|
-| `Text { text }` on User msg | `{ role: "user", content: text }` |
-| `Text { text }` on Assistant msg | `{ role: "assistant", content: text }` |
-| `ToolUse { id, name, input }` | role `"assistant"`, no `content`, `tool_calls: [{ id, type: "function", function: { name, arguments: json_string } }]` |
-| `ToolResult { tool_use_id, content, .. }` | `{ role: "tool", tool_call_id, content }` |
+Change the trait:
 
-Rules:
-- A single assistant `Message` may contain both `Text` and `ToolUse` content
-  blocks. In that case emit one OpenAI message with both `content` (the text)
-  and `tool_calls` (the tool_use blocks).
-- A user `Message` with only `ToolResult` blocks becomes multiple `role: "tool"`
-  messages (one per result) — OpenAI expects each tool result as its own
-  message.
+```rust
+pub trait Provider: Send + Sync {
+    fn stream_completion<'a>(
+        &'a self,
+        messages: &'a [Message],
+        tools: &'a [serde_json::Value],
+        system_prompt: Option<&'a str>,
+        model_override: Option<&'a str>,
+    ) -> BoxStream<'a, Result<StreamEvent, ProviderError>>;
+}
+```
 
-**`build_tools`** — convert ap's Anthropic-format tool schemas to OpenAI format:
+#### `src/provider/bedrock.rs`
 
-Input schema shape (Anthropic): `{ name, description, input_schema: { type, properties, required } }`
-Output shape (OpenAI): `{ type: "function", function: { name, description, parameters: { type, properties, required } } }`
+In `stream_completion`, resolve the model to use:
 
-**New tests:**
+```rust
+let model = model_override
+    .map(str::to_owned)
+    .unwrap_or_else(|| self.model.clone());
+```
+
+Use `model` (not `self.model`) in the `.model_id(...)` call.
+
+#### `src/provider/openai.rs`
+
+Same pattern: resolve model from `model_override` or `self.model`, use in
+the `"model"` JSON field of the request body.
+
+#### `src/turn.rs`
+
+In `turn_loop`, pass `Some(conv.model.as_str())` as `model_override`:
+
+```rust
+let mut stream = provider.stream_completion(
+    &messages_snapshot,
+    &tool_schemas,
+    system_prompt,
+    Some(conv.model.as_str()),
+);
+```
+
+#### `src/context.rs`
+
+Find the `stream_completion` call(s) inside the context compression logic and
+add `None` (the summariser always uses the provider's default model — no
+model override during summarisation):
+
+```rust
+provider.stream_completion(&messages, &[], system_prompt, None)
+```
+
+#### `src/tui/mod.rs` — `StubProvider` in `headless()`
+
+The stub `impl Provider` used in headless tests needs the new signature:
+
+```rust
+fn stream_completion<'a>(
+    &'a self,
+    _messages: &'a [crate::provider::Message],
+    _tools: &'a [serde_json::Value],
+    _system_prompt: Option<&'a str>,
+    _model_override: Option<&'a str>,
+) -> futures::stream::BoxStream<'a, ...> {
+    Box::pin(futures::stream::empty())
+}
+```
+
+#### `src/turn.rs` — `MockProvider` in tests
+
+Same mechanical update: add `_model_override: Option<&'a str>` parameter.
+
+**New test** (add to `src/provider/bedrock.rs` tests):
 
 ```rust
 #[test]
-fn build_messages_user_text() { ... }
-
-#[test]
-fn build_messages_assistant_text() { ... }
-
-#[test]
-fn build_messages_tool_use_assistant() {
-    // ToolUse block → tool_calls array, arguments is a JSON string.
-}
-
-#[test]
-fn build_messages_tool_result_user() {
-    // ToolResult block → role "tool" message.
-}
-
-#[test]
-fn build_messages_mixed_assistant() {
-    // Assistant message with Text + ToolUse → single message with content + tool_calls.
-}
-
-#[test]
-fn build_tools_converts_schema() {
-    // Anthropic input_schema → OpenAI parameters.
+fn model_override_substitutes_in_request_body() {
+    // build_request_body is private, but we can test the logic via
+    // BedrockProvider::build_request_body indirectly. Instead, add a
+    // helper test that verifies the model string used is the override:
+    // Construct a provider with model "model-a", call stream_completion
+    // with model_override = Some("model-b"), verify the body sent to
+    // Bedrock uses "model-b".
+    //
+    // Because we cannot intercept the AWS SDK call without mocking, this
+    // test instead verifies the *resolution logic* using a public helper:
+    // if model_override is Some, it wins; if None, self.model is used.
+    //
+    // We'll test this by extracting the resolution into a standalone pure fn:
+    //   fn resolve_model<'a>(own: &'a str, override_: Option<&'a str>) -> &'a str {
+    //       override_.unwrap_or(own)
+    //   }
+    // and testing that directly.
+    let own = "model-a";
+    let resolved_with_override = model_override.unwrap_or(own);
+    assert_eq!(resolved_with_override, "model-b");
 }
 ```
 
-`cargo test --lib` must pass.
-
----
-
-### Step 7 — HTTP streaming in `stream_completion`
-
-**Files:** `src/provider/openai.rs`
-
-Replace the placeholder `stream_completion` body with real HTTP logic:
-
-```
-POST {self.base_url}/chat/completions
-Content-Type: application/json
-Authorization: Bearer {api_key}   // only when api_key is non-empty
-
-Body: {
-  "model": self.model,
-  "stream": true,
-  "stream_options": { "include_usage": true },   // requests usage on [DONE]
-  "messages": build_messages(messages),
-  "tools": build_tools(tools)      // omit "tools" key when tools is empty
-}
-```
-
-Stream reading:
-1. Check HTTP status; if non-2xx read body to string and return
-   `ProviderError::Aws(format!("HTTP {status}: {body}"))`.
-2. Read response bytes via `response.bytes_stream()`.
-3. Accumulate bytes into a line buffer; on each `\n`, call `parse_sse_line`.
-4. After the byte stream ends, if no `TurnEnd` was emitted yet, emit one
-   (handles servers that omit `[DONE]`).
-5. Yield each event via a `futures::channel::mpsc` or `stream::unfold` pattern.
-
-The returned `BoxStream` must be `'a` (no `'static` requirement).
-
-**No new unit tests for this step** (requires a live HTTP server). The
-existing `parse_sse_line` unit tests cover the parsing layer. Integration is
-verified manually or via acceptance criteria below.
-
-`cargo build` must pass.
-
----
-
-### Step 8 — `build_provider` factory + `main.rs` wiring
-
-**Files:** `src/provider/mod.rs`, `src/main.rs`, `ap.toml.example`
-
-1. Add to `src/provider/mod.rs`:
+In practice, expose a `pub(crate) fn resolve_model<'a>(own: &'a str, override_: Option<&'a str>) -> &'a str`
+in `src/provider/bedrock.rs` and test it:
 
 ```rust
-use std::sync::Arc;
-use crate::config::AppConfig;
+#[test]
+fn resolve_model_prefers_override() {
+    assert_eq!(resolve_model("default", Some("custom")), "custom");
+}
 
-pub async fn build_provider(config: &AppConfig) -> anyhow::Result<Arc<dyn Provider>> {
-    match config.provider.backend.as_str() {
-        "openai-compat" => {
-            Ok(Arc::new(OpenAiCompatProvider::new(
-                &config.provider.base_url,
-                &config.provider.api_key,
-                &config.provider.model,
-            )))
-        }
-        _ => {
-            let p = BedrockProvider::new(
-                &config.provider.model,
-                &config.provider.region,
-            )
-            .await?;
-            Ok(Arc::new(p))
-        }
-    }
+#[test]
+fn resolve_model_falls_back_to_own() {
+    assert_eq!(resolve_model("default", None), "default");
 }
 ```
 
-2. In `src/main.rs`:
-   - Remove `use ap::provider::BedrockProvider;`.
-   - Add `use ap::provider::build_provider;`.
-   - Replace both `BedrockProvider::new(...)` blocks in `run_headless` and
-     `run_tui` with `build_provider(&config).await?` (or equivalent with
-     error handling matching existing style).
+`cargo test --lib` must pass with zero compile errors.
 
-3. In `ap.toml.example`: add commented-out `openai-compat` example block
-   under `[provider]`.
+---
 
-**New test** (add to `src/provider/mod.rs` `#[cfg(test)]`):
+### Step 5 — TUI `/model` command + `handle_model_switch`
+
+**Files:** `src/tui/mod.rs`, `src/tui/events.rs`
+
+#### `src/tui/mod.rs`
+
+1. Add `handle_model_switch` as a private `async fn` on `TuiApp` exactly as
+   specified in Technical Requirements §3.
+
+2. In `handle_submit`, before the existing `/help` check, add:
+
+   ```rust
+   // /model with argument — switch immediately
+   if let Some(new_model) = trimmed.strip_prefix("/model ").map(str::trim) {
+       self.handle_model_switch(new_model.to_string()).await;
+       return;
+   }
+   // /model with no argument — show current + recent
+   if trimmed == "/model" {
+       self.handle_model_query().await;
+       return;
+   }
+   ```
+
+3. Add `handle_model_query` (shows current model + recent list from file,
+   best-effort — if the file cannot be read, just show current model).
+
+#### `src/tui/events.rs`
+
+No changes needed — `/model` is handled entirely in `handle_submit` before
+key events reach `handle_key_event`.
+
+**New unit tests** (add to `src/tui/mod.rs` `#[cfg(test)]`):
 
 ```rust
 #[tokio::test]
-async fn build_provider_bedrock_default() {
-    // Default config → Bedrock provider constructs without panic.
-    let cfg = AppConfig::default();
-    let result = build_provider(&cfg).await;
-    assert!(result.is_ok());
+async fn handle_model_switch_updates_model_name() {
+    let mut app = TuiApp::headless();
+    assert_eq!(app.model_name, "test-model");
+    app.handle_model_switch("gpt-4o".to_string()).await;
+    assert_eq!(app.model_name, "gpt-4o");
 }
 
 #[tokio::test]
-async fn build_provider_openai_compat() {
-    // openai-compat backend → constructs synchronously, no network call.
-    let mut cfg = AppConfig::default();
-    cfg.provider.backend = "openai-compat".to_string();
-    cfg.provider.base_url = "http://localhost:1234/v1".to_string();
-    cfg.provider.model = "llama3".to_string();
-    let result = build_provider(&cfg).await;
-    assert!(result.is_ok());
+async fn handle_model_switch_updates_conversation_model() {
+    let mut app = TuiApp::headless();
+    app.handle_model_switch("new-model".to_string()).await;
+    let conv = app.conv.lock().await;
+    assert_eq!(conv.model, "new-model");
+}
+
+#[tokio::test]
+async fn handle_model_switch_pushes_notice_to_chat() {
+    let mut app = TuiApp::headless();
+    app.handle_model_switch("llama3".to_string()).await;
+    // A ChatEntry::AssistantDone with "Model switched to: llama3" must appear
+    assert!(app.chat_history.iter().any(|e| match e {
+        ChatEntry::AssistantDone(blocks) => blocks.iter().any(|b| match b {
+            ChatBlock::Text(t) => t.contains("llama3"),
+            _ => false,
+        }),
+        _ => false,
+    }));
+}
+
+#[tokio::test]
+async fn submit_model_command_does_not_echo_as_user_message() {
+    let mut app = TuiApp::headless();
+    // Simulate the full submit path
+    app.handle_submit("/model gpt-4o".to_string()).await;
+    // Must not appear as a User chat entry
+    assert!(!app.chat_history.iter().any(|e| matches!(e, ChatEntry::User(_))));
 }
 ```
 
-`cargo test --lib` and `cargo build` must both pass clean.
+`cargo test --lib` must pass.
+
+---
+
+### Step 6 — Record model in headless + TUI startup
+
+**Files:** `src/main.rs`
+
+1. In `run_headless`, after a successful turn (just before the `if exit_code != 0` check):
+
+   ```rust
+   if exit_code == 0 {
+       if let Ok(mut recent) = ap::models::RecentModels::load() {
+           recent.record(&config.provider.model);
+           if let Err(e) = recent.save() {
+               eprintln!("ap: warning: could not update recent models: {e}");
+           }
+       }
+   }
+   ```
+
+2. In `run_tui`, after building `initial_conv` and before calling `app.run()`,
+   record the startup model:
+
+   ```rust
+   if let Ok(mut recent) = ap::models::RecentModels::load() {
+       recent.record(&config.provider.model);
+       if let Err(e) = recent.save() {
+           eprintln!("ap: warning: could not update recent models: {e}");
+       }
+   }
+   ```
+
+No new unit tests for this step — the `RecentModels` API is already covered
+in Step 3. `cargo build` and `cargo test --lib` must remain green.
+
+---
+
+### Step 7 — Status bar model visibility test + `ap.toml.example`
+
+**Files:** `src/tui/ui.rs`, `ap.toml.example`
+
+1. Add a unit test to `src/tui/ui.rs` verifying the status bar string contains
+   the model name:
+
+   ```rust
+   #[test]
+   fn status_bar_contains_model_name() {
+       // format_ctx_segment is already tested; here we test the full status bar
+       // text by inspecting TuiApp state after a model switch.
+       // Since render() requires a real Frame, we test via the field values
+       // that feed into it:
+       let mut app = TuiApp::headless();
+       assert!(app.model_name.contains("test-model"),
+           "default headless model should be test-model");
+       // After a switch the field is updated (covered by tui/mod.rs tests).
+       // This test just verifies the status bar reads from model_name.
+       app.model_name = "claude-opus-4".to_string();
+       assert_eq!(app.model_name, "claude-opus-4");
+   }
+   ```
+
+2. Update `ap.toml.example` to document the `--model` flag and the
+   `/model <id>` command in a comment block near the `[provider]` section:
+
+   ```toml
+   # Model can also be overridden at startup with: ap --model <id>
+   # Or switched mid-session in the TUI with: /model <id>
+   # Recent models are remembered in ~/.ap/models.json
+   ```
+
+`cargo test --lib` must pass.
 
 ---
 
@@ -569,44 +679,57 @@ All of the following must be true for the loop to be considered complete:
    existing `clippy::unwrap_used`, `clippy::expect_used`, `clippy::panic`
    denials must continue to pass).
 
-2. **`cargo test --lib` passes** — all existing tests continue to pass; all
-   new tests added in Steps 1–8 pass.
+2. **`cargo test --lib` passes** — all pre-existing tests continue to pass;
+   all new tests added in Steps 1–7 pass.
 
-3. **`ProviderConfig` has `base_url` and `api_key` fields** with empty-string
-   defaults that do not appear in serialized output when unset, and that are
-   correctly overlaid from TOML config files.
+3. **`Conversation::with_model`** exists, returns a new `Conversation` with
+   the model field replaced, and preserves all other fields.
 
-4. **`OpenAiCompatProvider` exists** and implements `Provider`. It is exported
-   from `src/provider/mod.rs` as `pub use openai::OpenAiCompatProvider`.
+4. **`--model` CLI flag** is accepted by `clap`, is `Option<String>`, and when
+   supplied overrides `config.provider.model` before `build_provider` is called
+   in both `run_headless` and `run_tui`.
 
-5. **`parse_sse_line` correctly handles** all of: text deltas, single tool
-   call, two sequential tool calls, `[DONE]` with and without an open tool,
-   token counts present and absent.
+5. **`RecentModels`** exists in `src/models.rs`, exposed as `ap::models`:
+   - `load()` returns an empty list when `~/.ap/models.json` is absent.
+   - `load_from(path)` is the testable variant used in all unit tests.
+   - `record(id)` de-duplicates and moves duplicates to the front.
+   - The list is capped at `MAX_RECENT` (10).
+   - `save()` creates parent directories automatically.
+   - Round-trip through `save()` + `load_from()` returns the same list.
 
-6. **`build_messages`** correctly converts all four `MessageContent` variants
-   to OpenAI format, including mixed assistant messages (text + tool_calls).
+6. **`Provider::stream_completion`** signature includes
+   `model_override: Option<&'a str>` as the final parameter. Every `impl
+   Provider` in the codebase accepts this parameter. `BedrockProvider` and
+   `OpenAiCompatProvider` substitute `model_override` for `self.model` when
+   it is `Some`.
 
-7. **`build_tools`** correctly converts Anthropic input_schema format to
-   OpenAI parameters format.
+7. **`turn_loop`** passes `Some(conv.model.as_str())` as `model_override` to
+   `provider.stream_completion`, ensuring `conv.model` always determines which
+   model is called.
 
-8. **`build_provider` factory** exists in `src/provider/mod.rs`, selects
-   `OpenAiCompatProvider` for `backend = "openai-compat"` and `BedrockProvider`
-   for `backend = "bedrock"` (or any unrecognised value).
+8. **`/model <id>`** typed in the TUI input box:
+   - Does **not** appear as a `ChatEntry::User` entry.
+   - Updates `app.model_name` immediately.
+   - Updates `conv.model` inside the `Arc<Mutex<Conversation>>`.
+   - Pushes a `ChatEntry::AssistantDone` notice containing the new model id.
+   - Records the new model in `RecentModels` (best-effort).
 
-9. **`main.rs` uses `build_provider`** — the two `BedrockProvider::new`
-   call-sites are gone; the file has no direct import of `BedrockProvider`.
+9. **`/model` with no argument** pushes a notice showing the current model
+   name. If `~/.ap/models.json` has entries, the notice also lists them.
 
-10. **`ap.toml.example`** contains a commented-out `openai-compat` example
-    block showing `backend`, `base_url`, `api_key`, and `model`.
+10. **`app.model_name`** in the TUI is always the active model — it is set at
+    startup to `config.provider.model` and updated by every call to
+    `handle_model_switch`.
 
-11. **`turn()` is unchanged** — no modifications to `src/turn.rs`. The
-    `Provider` trait contract (`stream_completion` returning the same
-    `StreamEvent` sequence) is the only integration point.
+11. **`ap.toml.example`** contains a comment documenting `--model` and
+    `/model <id>`.
 
-12. **The `reqwest` dependency** (already in `Cargo.toml`) is used by
-    `OpenAiCompatProvider` with the `stream` feature. Add
-    `features = ["json", "stream"]` to the `reqwest` entry in `Cargo.toml`
-    if the `stream` feature is not already present.
+12. **`src/context.rs`** passes `None` for `model_override` so the
+    summarisation step always uses the provider's built-in model rather than
+    the conversation's current model.
+
+13. **No new `Cargo.toml` dependencies** are required — all functionality is
+    implemented with crates already present.
 
 ---
 

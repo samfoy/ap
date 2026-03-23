@@ -401,3 +401,5 @@ The gap is the entire feature — all 204 passing tests are pre-existing, none b
 [19:52:44] Review: Let me read the relevant files to assess the implementation.**Did not land.** The commit is scaffolding only — `ap/PROMPT.md` was rewritten into a detailed 8-step implementation spec for the OpenAI-compatible provider, and `BACKLOG.md` was flipped to `[~]` (in-progress), but **no Rust code was written**: `src/provider/openai.rs` doesn't exist, `ProviderConfig` still has no `base_url`/`api_key` fields, `build_provider` is absent, and `main.rs` still calls `BedrockProvider::new` directly.
 
 The gap is the entire feature — all 204 passing tests are pre-existing, none belong to this work. The loop produced a thorough spec in `PROMPT.md` but timed out or failed before executing any of the 8 steps it planned.
+[19:52:45] Starting: Model switching
+[19:52:45] Starting: Model switching
