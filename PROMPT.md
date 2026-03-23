@@ -1,39 +1,32 @@
-# PROMPT.md — Model Switching
+Now I have a thorough understanding of the entire codebase. Let me write the PROMPT.md.The PROMPT.md has been written to `/Users/sam.painter/Projects/ap/ap/PROMPT.md` (515 lines, ~20 KB). Here's a summary of what it contains:
 
-## Vision
+---
 
-Users can swap the active AI model mid-session without restarting `ap`. A `/model <name>` slash command switches the model for all subsequent turns. The current model is shown in the TUI status bar and in `--prompt` mode output. Config supports a default model via `[provider] model = "..."` in `~/.ap/config.toml`.
+## What's in the PROMPT.md
 
-## Requirements
+### Vision
+Clear statement of the four-layer feature: CLI flag → config, `RecentModels` store, TUI `/model` command, status bar display.
 
-### 1. Config: default model
-- Add `model` field to `[provider]` section in `Config` struct (`src/config.rs`)
-- Default: `"us.anthropic.claude-sonnet-4-6-v1:0"` (current hardcoded value)
-- Read from `~/.ap/config.toml` on startup
+### Technical Requirements (R1–R6)
+Precise Rust types and signatures for every change:
+- **R1** — `--model`/`-m` `Args` field + override pattern in `main()`
+- **R2** — Full `RecentModels` struct with `push` (pure), `load`/`load_from`, `save`/`save_to` signatures
+- **R3** — `Action::ModelSwitch(String)` variant + exact `handle_key_event` intercept logic
+- **R4** — `handle_model_switch` async method with mutex discipline (guard dropped before every `.await`)
+- **R5** — `format_model_segment` truncation helper (30-char cap with `…`)
+- **R6** — `pub mod models;` in `src/lib.rs`
 
-### 2. Runtime model switching
-- Add `/model <name>` slash command handler in `handle_submit` (or a dedicated slash command parser)
-- Switching model updates `TuiApp.model_name` and passes new model to the provider for subsequent turns
-- Print confirmation inline: `Model switched to: <name>`
-- Invalid model names: show error inline, don't crash
+### 6 Ordered Implementation Steps
+Each independently compilable, with a table of required tests per step:
+1. `src/models.rs` — pure store (11 tests)
+2. CLI flag wiring in `main.rs` (4 tests)
+3. `Action::ModelSwitch` + minimal stub in `tui/mod.rs` (7 tests)
+4. Full `handle_model_switch` implementation (4 tests, CI-safe)
+5. `format_model_segment` + status bar (6 tests)
+6. Final wiring audit + integration smoke (2 tests + full clean-build check)
 
-### 3. Provider accepts model per-turn
-- `BedrockProvider` currently hardcodes the model — refactor to accept `model: &str` as a parameter on `complete()` / streaming call
-- Or store on the provider struct and expose a `set_model(&mut self, model: String)` method
+### 17 Acceptance Criteria
+Covering: clean build, clippy, `--help` output, headless model log, `RecentModels` purity/dedup/cap/roundtrip, `/model` command routing, empty-arg behaviour, waiting-state guard, chat notice content, truncation, status bar wiring.
 
-### 4. Status bar shows current model
-- Already shows model_name — ensure it updates immediately after `/model` switch (no restart needed)
-
-### 5. `--prompt` mode respects config model
-- When running `ap --prompt "..."`, use model from config (or `--model` CLI flag if provided)
-- Add optional `--model <name>` CLI flag to override config for a single run
-
-## Acceptance Criteria
-
-- `ap` starts with model from `~/.ap/config.toml` (falls back to default if not set)
-- `/model claude-sonnet-4-5` switches model for next turn, status bar updates
-- `ap --model us.anthropic.claude-haiku-3-5-v1:0 --prompt "hello"` uses specified model
-- `cargo build` passes
-- `cargo test` passes (≥204 tests)
-
-Output LOOP_COMPLETE when all acceptance criteria are met and the project builds clean.
+### Implementation Notes
+Explicit guidance on clippy constraints (`unwrap`/`expect`/`panic` banned outside tests), no new deps, mutex drop discipline, `BedrockProvider` construction safety in unit tests, and strict step ordering.
