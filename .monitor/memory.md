@@ -176,3 +176,15 @@ Commits:
 2297a12 chore(monitor): clean slate — remove all stale worktrees and state
 d3e109d chore(monitor): trim memory context from prompts, bump timeout to 300s
 03aee8b chore(monitor): complete Provider abstraction
+
+## 2026-03-22 17:07 — Model switching
+Review: **No, model switching did not land.** The loop delivered **conversation context management** (item 4) instead — a full `context.rs` module with token estimation, compression, config wiring, TUI status bar updates, and 209 passing tests. That's a solid, clean landing for what it actually built.
+
+The stated goal of model switching (item 6) only got a monitor "start" commit (`08e7dd1`) marking it as in-progress (`[~]`) — no source changes, no `/model` command, no `--model` flag, nothing in `config.rs` beyond the existing static `model` field. The loop completed the prior backlog item and kicked off the next one but didn't execute it before stopping.
+Commits:
+4292b61 chore: auto-commit before merge (loop primary)
+54b604d chore(context): update implementation context notes to reflect completion
+ad10615 chore(monitor): complete Conversation context management
+e88ee7b feat: merge Conversation context management
+0f2f05b chore: strip ephemeral state before merge
+6f210e4 chore: auto-commit before merge (loop primary)
