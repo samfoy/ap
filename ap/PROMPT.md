@@ -1,369 +1,612 @@
-# PROMPT.md — Session persistence in `--prompt` mode
+# Provider Abstraction — Implementation PROMPT
 
 ## Vision
 
-`ap --prompt "..."` is the headless/scriptable face of the agent. It currently
-discards the conversation after every run. The goal is to make it a first-class
-citizen of the session system: every headless run creates a named session file in
-`~/.ap/sessions/`, exactly as the interactive TUI does (or will do).
+`ap` currently hard-codes AWS Bedrock as the only LLM backend. The goal is to
+introduce a clean **provider abstraction** so any OpenAI-compatible endpoint
+(OpenRouter, LM Studio, Ollama, direct OpenAI) can be used by changing two
+lines in `ap.toml` — no recompilation, no code changes.
 
-After this work:
+The existing `Provider` trait in `src/provider/mod.rs` is already well-designed
+for this. This work adds:
 
-- `ap --prompt "fix the tests"` creates `~/.ap/sessions/prompt-fix-the-tests-2026-03-22.json`
-- `ap --prompt "fix the tests" --session my-fix` creates `~/.ap/sessions/my-fix.json`
-- `ap --prompt "continue" --session my-fix` resumes that session
-- Stdout still receives the streamed assistant response (no behavioural regression)
-- The session file is a standard `Conversation` JSON (same schema as TUI sessions)
+1. An `openai-compat` backend in `src/provider/openai.rs` that speaks the
+   OpenAI Chat Completions streaming API (SSE `data:` lines, `delta.content` /
+   `delta.tool_calls`).
+2. Config wiring: `[provider] backend = "openai-compat"` picks the new
+   provider; `base_url` and `api_key` are read from `ProviderConfig`.
+3. Tool-call format parity: the `openai-compat` provider emits the same
+   `StreamEvent` sequence as `BedrockProvider` — `ToolUseStart` /
+   `ToolUseParams` / `ToolUseEnd` — so `turn()` requires **zero changes**.
+4. A `build_provider` factory function that reads `AppConfig` and returns
+   `Arc<dyn Provider>`, replacing the two ad-hoc `BedrockProvider::new()`
+   calls in `main.rs`.
 
 ---
 
-## Technical context
+## Technical Requirements
 
-### Relevant files
+### New config fields (`src/config.rs`)
 
-| File | Role |
-|---|---|
-| `src/main.rs` | Entry point; `run_headless()` owns all `--prompt` logic |
-| `src/session/mod.rs` | `Session` value type (not used by headless currently) |
-| `src/session/store.rs` | `SessionStore` — `save_conversation` / `load_conversation` |
-| `src/types.rs` | `Conversation` — immutable value, `#[derive(Serialize, Deserialize)]` |
-| `tests/noninteractive.rs` | Existing integration tests for headless path |
-
-### Key types (do not change their public signatures)
+Extend `ProviderConfig`:
 
 ```rust
-// src/types.rs
-pub struct Conversation {
-    pub id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProviderConfig {
+    pub backend: String,   // "bedrock" (default) | "openai-compat"
     pub model: String,
-    pub messages: Vec<Message>,
-    #[serde(default)]
-    pub config: AppConfig,
-    #[serde(skip)]
-    pub system_prompt: Option<String>,
-}
-
-impl Conversation {
-    pub fn new(id: impl Into<String>, model: impl Into<String>, config: AppConfig) -> Self;
-    pub fn with_user_message(self, content: impl Into<String>) -> Self;
-    pub fn with_system_prompt(self, prompt: impl Into<String>) -> Self;
-    pub fn with_messages(self, messages: Vec<Message>) -> Self;
-}
-
-// src/session/store.rs
-pub struct SessionStore { pub base: PathBuf }
-impl SessionStore {
-    pub fn new() -> Result<Self>;
-    pub fn with_base(base: PathBuf) -> Self;
-    pub fn save_conversation(&self, conv: &Conversation) -> Result<()>;
-    pub fn load_conversation(&self, id: &str) -> Result<Conversation>;
+    pub region: String,    // Bedrock only
+    pub base_url: String,  // openai-compat: e.g. "https://openrouter.ai/api/v1"
+    pub api_key: String,   // openai-compat: Bearer token (empty string = no auth)
 }
 ```
 
-### Current `run_headless` behaviour (baseline)
-
-```rust
-async fn run_headless(
-    config: AppConfig,
-    session_id: Option<String>,   // Some only when --session passed
-    prompt: &str,
-) -> anyhow::Result<()>
-```
-
-Session is only saved when `--session` is explicitly supplied. Without it, the
-conversation is `"ephemeral"` and is discarded.
+Defaults for new fields: `base_url = ""`, `api_key = ""`.
+`overlay_from_table` must handle the two new keys identically to the existing
+`backend` / `model` / `region` keys (explicit-only overlay, no serde default
+bleed-through).
 
 ---
 
-## Slug generation
-
-A **session slug** is a URL-safe, human-readable identifier derived from the
-prompt plus the current UTC date:
-
-```
-prompt-<words>-<YYYY-MM-DD>
-```
-
-Rules (pure function, no I/O):
-
-1. Take the first **6 words** of the prompt (split on whitespace).
-2. Lowercase every word.
-3. Replace every run of non-alphanumeric characters in each word with `-`.
-4. Strip leading/trailing `-` from each word; drop empty words.
-5. Join words with `-`, prefix `prompt-`, suffix `-<YYYY-MM-DD>`.
-6. Truncate the entire string to **60 characters** maximum.
-
-Examples:
-
-| Prompt | Expected slug (2026-03-22) |
-|---|---|
-| `"hello"` | `"prompt-hello-2026-03-22"` |
-| `"Read the backlog and fix item 3"` | `"prompt-read-the-backlog-and-fix-2026-03-22"` |
-| `"Fix tests!!!"` | `"prompt-fix-tests-2026-03-22"` |
-| `"  leading spaces  "` | `"prompt-leading-spaces-2026-03-22"` |
-
-The date must come from the system clock (UTC). Use the existing
-`format_unix_as_iso8601` logic already in `src/session/mod.rs` for the date
-part (or replicate the Julian Day approach there — no `chrono` dependency).
-
----
-
-## Implementation steps
-
-Each step must leave the project in a **compilable, test-passing** state.
-Run `cargo test --lib` after each step to verify.
-
----
-
-### Step 1 — Pure `prompt_slug` function in `src/session/mod.rs`
-
-Add a public function:
+### New provider (`src/provider/openai.rs`)
 
 ```rust
-/// Derive a session slug from a prompt string and a Unix timestamp (seconds).
-///
-/// Format: `prompt-<up-to-6-slugified-words>-<YYYY-MM-DD>`
-/// Maximum length: 60 characters.
-pub fn prompt_slug(prompt: &str, unix_secs: u64) -> String
+pub struct OpenAiCompatProvider {
+    client: reqwest::Client,
+    base_url: String,   // trailing slash stripped at construction
+    api_key: String,
+    model: String,
+}
+
+impl OpenAiCompatProvider {
+    pub fn new(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self { ... }
+
+    /// Convert ap's Message/MessageContent slice into the OpenAI messages array.
+    /// ToolResult content → role "tool", tool_call_id set.
+    /// ToolUse → role "assistant" with tool_calls array.
+    fn build_messages(messages: &[Message]) -> Vec<serde_json::Value> { ... }
+
+    /// Convert ap's tool schemas (already in Anthropic tool_use JSON) into
+    /// OpenAI `tools` array format ({ type: "function", function: { name, description, parameters } }).
+    fn build_tools(tools: &[serde_json::Value]) -> Vec<serde_json::Value> { ... }
+
+    /// Parse one SSE `data:` line (the JSON string after stripping "data: ").
+    /// Returns zero or more StreamEvents. Mirrors BedrockProvider::parse_sse_event.
+    pub fn parse_sse_line(
+        line: &str,
+        state: &mut OpenAiStreamState,
+        out: &mut Vec<Result<StreamEvent, ProviderError>>,
+    ) { ... }
+}
+
+impl Provider for OpenAiCompatProvider { ... }
 ```
 
-- Lives in `src/session/mod.rs` (next to the existing `format_unix_as_iso8601`
-  helper which it should call for the date part).
-- **Pure function** — no `SystemTime` calls inside; the caller supplies
-  `unix_secs` so tests can be deterministic.
-- Exposed as `pub` so `main.rs` can call `ap::session::prompt_slug(...)`.
-
-Add unit tests in the same file under `#[cfg(test)]`:
+**`OpenAiStreamState`** — tracks in-progress tool call accumulation across SSE
+chunks:
 
 ```rust
-// unix timestamp for 2026-03-22T00:00:00Z = 1_742_601_600
-const T: u64 = 1_742_601_600;
-
-assert_eq!(prompt_slug("hello", T), "prompt-hello-2026-03-22");
-assert_eq!(
-    prompt_slug("Read the backlog and fix item 3", T),
-    "prompt-read-the-backlog-and-fix-2026-03-22"
-);
-assert_eq!(prompt_slug("Fix tests!!!", T), "prompt-fix-tests-2026-03-22");
-assert_eq!(prompt_slug("  leading spaces  ", T), "prompt-leading-spaces-2026-03-22");
-// Truncation: slug must never exceed 60 chars
-let long = "a".repeat(200);
-assert!(prompt_slug(&long, T).len() <= 60);
+#[derive(Debug, Default)]
+pub struct OpenAiStreamState {
+    /// Index of the currently-open tool_call slot (-1 = none / text mode).
+    pub current_tool_index: i64,
+    /// Accumulated name for the current tool call (arrives in first chunk).
+    pub current_tool_name: String,
+    /// Accumulated id for the current tool call.
+    pub current_tool_id: String,
+    /// Whether we have emitted ToolUseStart for the current slot.
+    pub tool_start_emitted: bool,
+}
 ```
 
-**Compile check:** `cargo test --lib -- session`
+**SSE parsing rules** (OpenAI streaming format):
 
----
-
-### Step 2 — Auto-generate session name in `run_headless` when `--session` is absent
-
-Modify `run_headless` in `src/main.rs`:
-
-**Before** (current logic):
-```rust
-let store: Option<SessionStore> = session_id.as_ref().map(|_| { ... });
-
-let conv: Conversation = match (&session_id, &store) {
-    (Some(id), Some(s)) => /* load or create with explicit id */,
-    _ => Conversation::new("ephemeral", ...),   // ← discarded
-};
 ```
+data: {"id":"...","object":"chat.completion.chunk","choices":[{
+  "delta": {
+    "content": "hello"           // → StreamEvent::TextDelta("hello")
+  }
+}]}
 
-**After:**
-```rust
-// Resolve session name: explicit --session flag, or auto-generate from prompt
-let resolved_session_id: String = session_id
-    .clone()
-    .unwrap_or_else(|| {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        ap::session::prompt_slug(prompt, now)
-    });
-
-// Always create a SessionStore (needed for both explicit and auto sessions)
-let store = SessionStore::new().unwrap_or_else(|e| {
-    eprintln!("ap: warning: could not determine session dir: {e}");
-    SessionStore::with_base(std::path::PathBuf::from(".ap/sessions"))
-});
-
-// Load existing session or create fresh Conversation
-let conv: Conversation = match store.load_conversation(&resolved_session_id) {
-    Ok(c) => {
-        eprintln!(
-            "ap: resuming session {} ({} messages)",
-            resolved_session_id,
-            c.messages.len()
-        );
-        c
+data: {"choices":[{"delta":{
+  "tool_calls":[{
+    "index": 0,
+    "id": "call_abc",            // present in first chunk for this index
+    "function": {
+      "name": "bash",            // present in first chunk
+      "arguments": "{\"cmd\":"   // may be partial; accumulate → ToolUseParams
     }
-    Err(_) => Conversation::new(
-        resolved_session_id.clone(),
-        config.provider.model.clone(),
-        config.clone(),
+  }]
+}}]}
+
+data: [DONE]                     // → StreamEvent::TurnEnd (stop_reason "end_turn",
+                                 //   tokens from x_usage if present, else 0)
+```
+
+Rules:
+- When `delta.tool_calls[n].index` changes to a new value AND we were
+  accumulating a previous tool call, emit `StreamEvent::ToolUseEnd` for the
+  old one, then `StreamEvent::ToolUseStart` for the new one.
+- When a chunk carries `delta.tool_calls[n]` with the same index as current,
+  emit `StreamEvent::ToolUseParams(arguments_fragment)`.
+- The `id` and `name` fields only appear in the **first** chunk for each
+  `index`; subsequent chunks for the same index only carry `arguments`.
+- On `data: [DONE]`: if `tool_start_emitted` is true, emit `ToolUseEnd` first,
+  then `TurnEnd`.
+- Token counts: look for `usage.prompt_tokens` / `usage.completion_tokens` on
+  the `[DONE]` chunk or any chunk that carries a `usage` field. If absent,
+  emit 0/0.
+- `finish_reason: "tool_calls"` on a non-DONE chunk should also trigger
+  `ToolUseEnd` if a tool is open, but do NOT emit `TurnEnd` (wait for `[DONE]`).
+
+**`Provider` impl** — `stream_completion` must:
+1. Call `POST {base_url}/chat/completions` with `stream: true`.
+2. Set `Authorization: Bearer {api_key}` header only when `api_key` is
+   non-empty.
+3. Read the response as a byte stream, splitting on `\n`.
+4. Forward each `data: ...` line to `parse_sse_line`.
+5. Return a `BoxStream<'a, Result<StreamEvent, ProviderError>>`.
+
+Errors:
+- Non-2xx HTTP response → `ProviderError::Aws(format!("HTTP {status}: {body}"))`.
+  (Reuse `ProviderError::Aws` — no new variant needed.)
+- Reqwest transport error → `ProviderError::Aws(e.to_string())`.
+- JSON parse failure → `ProviderError::ParseError(...)`.
+
+---
+
+### Provider factory (`src/provider/mod.rs`)
+
+```rust
+/// Build the appropriate provider from config, returning an Arc<dyn Provider>.
+/// Called once at startup in main.rs.
+pub async fn build_provider(config: &AppConfig) -> anyhow::Result<Arc<dyn Provider>>;
+```
+
+Logic:
+
+```
+match config.provider.backend.as_str() {
+    "openai-compat" => Arc::new(OpenAiCompatProvider::new(
+        &config.provider.base_url,
+        &config.provider.api_key,
+        &config.provider.model,
+    )),
+    _ /* "bedrock" */ => Arc::new(
+        BedrockProvider::new(&config.provider.model, &config.provider.region).await?
     ),
-};
-```
-
-Remove the now-dead `Option<SessionStore>` pattern.  
-At the end of `run_headless`, always save (not only when `session_id.is_some()`):
-
-```rust
-// Save session after every successful headless run
-if exit_code == 0 {
-    if let Err(e) = store.save_conversation(&updated_conv) {
-        eprintln!("ap: warning: could not save session: {e}");
-    } else {
-        eprintln!("ap: session saved: {}", resolved_session_id);
-    }
 }
 ```
 
-**Compile check:** `cargo build`
+---
+
+### `main.rs` changes
+
+Replace the two `BedrockProvider::new(...)` call-sites with `build_provider(&config).await?`.
+Remove the `use ap::provider::BedrockProvider;` import.
+`run_headless` and `run_tui` both call `build_provider`.
 
 ---
 
-### Step 3 — Integration test: session file is created by `ap --prompt`
+### `ap.toml.example` additions
 
-Add a new test in `tests/noninteractive.rs` (or a new file
-`tests/session_persistence.rs`).
+```toml
+# OpenAI-compatible provider example (uncomment and fill in to use)
+# backend = "openai-compat"
+# base_url = "https://openrouter.ai/api/v1"
+# api_key  = "sk-or-..."
+# model    = "anthropic/claude-3.5-sonnet"
+```
 
-The test must:
+---
 
-1. Use `MockProvider` (copy the pattern from `tests/noninteractive.rs`).
-2. Invoke `turn()` directly (same as existing headless tests — no subprocess).
-3. Exercise the session-save logic by calling `SessionStore::save_conversation`
-   on the resulting `Conversation` and asserting the file exists.
-4. Verify the slug format when no explicit session name is given.
+## Ordered Implementation Steps
+
+Each step must leave `cargo build` (and `cargo test --lib`) **green** before
+moving to the next.
+
+---
+
+### Step 1 — Extend `ProviderConfig` with `base_url` and `api_key`
+
+**Files:** `src/config.rs`
+
+1. Add `base_url: String` and `api_key: String` to `ProviderConfig`.
+2. Set defaults: `base_url = String::new()`, `api_key = String::new()`.
+3. Extend `overlay_from_table` to overlay `base_url` and `api_key` when the
+   respective keys are present in the TOML table.
+
+**New tests** (add to `src/config.rs` `#[cfg(test)]` block):
 
 ```rust
 #[test]
-fn prompt_slug_format_matches_spec() {
-    use ap::session::prompt_slug;
-    // 2026-03-22T00:00:00Z
-    let t = 1_742_601_600u64;
-    let slug = prompt_slug("hello world", t);
-    assert!(slug.starts_with("prompt-hello-world-"), "got: {slug}");
-    assert!(slug.ends_with("2026-03-22"), "got: {slug}");
+fn provider_config_new_fields_default_empty() {
+    let cfg = AppConfig::default();
+    assert_eq!(cfg.provider.base_url, "");
+    assert_eq!(cfg.provider.api_key, "");
+}
+
+#[test]
+fn provider_config_base_url_overlay() {
+    // Write a TOML file with base_url set; api_key absent.
+    // Verify base_url is overridden, api_key stays "".
+}
+
+#[test]
+fn provider_config_api_key_overlay() {
+    // Write a TOML file with api_key set; base_url absent.
+    // Verify api_key is overridden, base_url stays "".
+}
+
+#[test]
+fn provider_config_both_fields_overlay() {
+    // Both base_url and api_key present in TOML.
+}
+```
+
+`cargo test --lib` must pass.
+
+---
+
+### Step 2 — Skeleton `OpenAiCompatProvider` (compiles, no HTTP)
+
+**Files:** `src/provider/openai.rs` (new), `src/provider/mod.rs`
+
+1. Create `src/provider/openai.rs` with:
+   - `pub struct OpenAiStreamState` (all fields as specified).
+   - `pub struct OpenAiCompatProvider` with `client`, `base_url`, `api_key`,
+     `model` fields.
+   - `impl OpenAiCompatProvider { pub fn new(...) -> Self }`.
+   - `pub fn parse_sse_line(line: &str, state: &mut OpenAiStreamState, out: &mut Vec<...>)`.
+     Body: stub that does nothing (empty). 
+   - `impl Provider for OpenAiCompatProvider` — `stream_completion` returns
+     `stream::empty().boxed()` (placeholder, always yields nothing).
+
+2. In `src/provider/mod.rs`:
+   - Add `pub mod openai;` and `pub use openai::OpenAiCompatProvider;`.
+
+**Acceptance:** `cargo build` green. No tests needed for this step beyond
+compilation.
+
+---
+
+### Step 3 — SSE parsing: text delta and `[DONE]`
+
+**Files:** `src/provider/openai.rs`
+
+Implement `parse_sse_line` for the two simplest cases:
+- `data: [DONE]` → emit `StreamEvent::TurnEnd { stop_reason: "end_turn", input_tokens: 0, output_tokens: 0 }`.
+- `data: {...}` where `delta.content` is a non-null string → emit `StreamEvent::TextDelta(...)`.
+- Anything else (empty line, `event:`, unknown JSON shape) → no-op.
+
+**New unit tests** in `src/provider/openai.rs`:
+
+```rust
+fn parse(line: &str, state: &mut OpenAiStreamState) -> Vec<StreamEvent> { ... }
+
+#[test]
+fn parse_done_emits_turn_end() { ... }
+
+#[test]
+fn parse_text_delta_emits_text_chunk() { ... }
+
+#[test]
+fn parse_empty_line_is_noop() { ... }
+
+#[test]
+fn parse_event_prefix_line_is_noop() { ... }
+```
+
+`cargo test --lib` must pass.
+
+---
+
+### Step 4 — SSE parsing: tool call accumulation
+
+**Files:** `src/provider/openai.rs`
+
+Extend `parse_sse_line` to handle `delta.tool_calls`:
+
+- First chunk for `index == 0` (or any new index): emit `ToolUseStart { id, name }`, set `tool_start_emitted = true`.
+- Subsequent chunks for same index: emit `ToolUseParams(arguments_fragment)`.
+- Index change from N to M (M > N): emit `ToolUseEnd` for N, then `ToolUseStart` for M.
+- `data: [DONE]` with `tool_start_emitted == true`: emit `ToolUseEnd`, then `TurnEnd`.
+
+**New unit tests:**
+
+```rust
+#[test]
+fn parse_tool_use_single_call() {
+    // Three chunks: first (id+name+partial_args), second (more args), [DONE].
+    // Expected: ToolUseStart, ToolUseParams×2, ToolUseEnd, TurnEnd.
+}
+
+#[test]
+fn parse_tool_use_two_sequential_calls() {
+    // Chunks for index 0, then index 1, then [DONE].
+    // Expected: ToolUseStart(0), params, ToolUseEnd(0),
+    //           ToolUseStart(1), params, ToolUseEnd(1), TurnEnd.
+}
+
+#[test]
+fn parse_done_without_open_tool_no_extra_end() {
+    // [DONE] after pure text: only TurnEnd, no ToolUseEnd.
+}
+
+#[test]
+fn parse_tool_params_accumulate_in_order() {
+    // Two ToolUseParams events must arrive in the order the SSE chunks arrive.
+}
+
+#[test]
+fn parse_finish_reason_tool_calls_closes_tool() {
+    // A non-DONE chunk with finish_reason = "tool_calls" should emit ToolUseEnd
+    // if a tool is open, but NOT TurnEnd.
+}
+```
+
+`cargo test --lib` must pass.
+
+---
+
+### Step 5 — Token count extraction
+
+**Files:** `src/provider/openai.rs`
+
+When `parse_sse_line` sees a `usage` object (either on the DONE chunk or any
+chunk that carries it), read `usage.prompt_tokens` → `input_tokens` and
+`usage.completion_tokens` → `output_tokens` into the `TurnEnd` event.
+
+Store the last-seen token counts in `OpenAiStreamState`:
+
+```rust
+pub struct OpenAiStreamState {
+    // ...existing fields...
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+```
+
+**New tests:**
+
+```rust
+#[test]
+fn parse_usage_on_done_chunk() {
+    // data: {"usage":{"prompt_tokens":10,"completion_tokens":5},...}
+    // followed by data: [DONE]
+    // TurnEnd carries input_tokens=10, output_tokens=5.
+}
+
+#[test]
+fn parse_usage_absent_defaults_zero() {
+    // Plain [DONE] with no usage field → TurnEnd with 0/0.
+}
+```
+
+`cargo test --lib` must pass.
+
+---
+
+### Step 6 — Message format conversion (`build_messages` / `build_tools`)
+
+**Files:** `src/provider/openai.rs`
+
+Implement the two static helpers:
+
+**`build_messages`** — convert `&[Message]` to OpenAI format:
+
+| ap `MessageContent` variant | OpenAI representation |
+|---|---|
+| `Text { text }` on User msg | `{ role: "user", content: text }` |
+| `Text { text }` on Assistant msg | `{ role: "assistant", content: text }` |
+| `ToolUse { id, name, input }` | role `"assistant"`, no `content`, `tool_calls: [{ id, type: "function", function: { name, arguments: json_string } }]` |
+| `ToolResult { tool_use_id, content, .. }` | `{ role: "tool", tool_call_id, content }` |
+
+Rules:
+- A single assistant `Message` may contain both `Text` and `ToolUse` content
+  blocks. In that case emit one OpenAI message with both `content` (the text)
+  and `tool_calls` (the tool_use blocks).
+- A user `Message` with only `ToolResult` blocks becomes multiple `role: "tool"`
+  messages (one per result) — OpenAI expects each tool result as its own
+  message.
+
+**`build_tools`** — convert ap's Anthropic-format tool schemas to OpenAI format:
+
+Input schema shape (Anthropic): `{ name, description, input_schema: { type, properties, required } }`
+Output shape (OpenAI): `{ type: "function", function: { name, description, parameters: { type, properties, required } } }`
+
+**New tests:**
+
+```rust
+#[test]
+fn build_messages_user_text() { ... }
+
+#[test]
+fn build_messages_assistant_text() { ... }
+
+#[test]
+fn build_messages_tool_use_assistant() {
+    // ToolUse block → tool_calls array, arguments is a JSON string.
+}
+
+#[test]
+fn build_messages_tool_result_user() {
+    // ToolResult block → role "tool" message.
+}
+
+#[test]
+fn build_messages_mixed_assistant() {
+    // Assistant message with Text + ToolUse → single message with content + tool_calls.
+}
+
+#[test]
+fn build_tools_converts_schema() {
+    // Anthropic input_schema → OpenAI parameters.
+}
+```
+
+`cargo test --lib` must pass.
+
+---
+
+### Step 7 — HTTP streaming in `stream_completion`
+
+**Files:** `src/provider/openai.rs`
+
+Replace the placeholder `stream_completion` body with real HTTP logic:
+
+```
+POST {self.base_url}/chat/completions
+Content-Type: application/json
+Authorization: Bearer {api_key}   // only when api_key is non-empty
+
+Body: {
+  "model": self.model,
+  "stream": true,
+  "stream_options": { "include_usage": true },   // requests usage on [DONE]
+  "messages": build_messages(messages),
+  "tools": build_tools(tools)      // omit "tools" key when tools is empty
+}
+```
+
+Stream reading:
+1. Check HTTP status; if non-2xx read body to string and return
+   `ProviderError::Aws(format!("HTTP {status}: {body}"))`.
+2. Read response bytes via `response.bytes_stream()`.
+3. Accumulate bytes into a line buffer; on each `\n`, call `parse_sse_line`.
+4. After the byte stream ends, if no `TurnEnd` was emitted yet, emit one
+   (handles servers that omit `[DONE]`).
+5. Yield each event via a `futures::channel::mpsc` or `stream::unfold` pattern.
+
+The returned `BoxStream` must be `'a` (no `'static` requirement).
+
+**No new unit tests for this step** (requires a live HTTP server). The
+existing `parse_sse_line` unit tests cover the parsing layer. Integration is
+verified manually or via acceptance criteria below.
+
+`cargo build` must pass.
+
+---
+
+### Step 8 — `build_provider` factory + `main.rs` wiring
+
+**Files:** `src/provider/mod.rs`, `src/main.rs`, `ap.toml.example`
+
+1. Add to `src/provider/mod.rs`:
+
+```rust
+use std::sync::Arc;
+use crate::config::AppConfig;
+
+pub async fn build_provider(config: &AppConfig) -> anyhow::Result<Arc<dyn Provider>> {
+    match config.provider.backend.as_str() {
+        "openai-compat" => {
+            Ok(Arc::new(OpenAiCompatProvider::new(
+                &config.provider.base_url,
+                &config.provider.api_key,
+                &config.provider.model,
+            )))
+        }
+        _ => {
+            let p = BedrockProvider::new(
+                &config.provider.model,
+                &config.provider.region,
+            )
+            .await?;
+            Ok(Arc::new(p))
+        }
+    }
+}
+```
+
+2. In `src/main.rs`:
+   - Remove `use ap::provider::BedrockProvider;`.
+   - Add `use ap::provider::build_provider;`.
+   - Replace both `BedrockProvider::new(...)` blocks in `run_headless` and
+     `run_tui` with `build_provider(&config).await?` (or equivalent with
+     error handling matching existing style).
+
+3. In `ap.toml.example`: add commented-out `openai-compat` example block
+   under `[provider]`.
+
+**New test** (add to `src/provider/mod.rs` `#[cfg(test)]`):
+
+```rust
+#[tokio::test]
+async fn build_provider_bedrock_default() {
+    // Default config → Bedrock provider constructs without panic.
+    let cfg = AppConfig::default();
+    let result = build_provider(&cfg).await;
+    assert!(result.is_ok());
 }
 
 #[tokio::test]
-async fn headless_turn_saves_session_to_store() {
-    // Arrange
-    let tmp = tempfile::tempdir().unwrap();
-    let store = ap::session::store::SessionStore::with_base(tmp.path().to_path_buf());
-
-    let provider = Arc::new(MockProvider::new(vec![vec![
-        StreamEvent::TextDelta("hi".to_string()),
-        StreamEvent::TurnEnd {
-            stop_reason: "end_turn".to_string(),
-            input_tokens: 5,
-            output_tokens: 2,
-        },
-    ]]));
-
-    let session_id = "prompt-hello-2026-03-22";
-    let conv = Conversation::new(session_id, "claude-3", AppConfig::default())
-        .with_user_message("hello");
-    let tools = ToolRegistry::with_defaults();
-    let middleware = Middleware::new();
-
-    // Act
-    let (updated_conv, _events) = turn(conv, provider.as_ref(), &tools, &middleware)
-        .await
-        .expect("turn failed");
-
-    store.save_conversation(&updated_conv).expect("save failed");
-
-    // Assert: file exists at expected path
-    let expected_path = tmp.path().join(format!("{session_id}.json"));
-    assert!(
-        expected_path.exists(),
-        "session file should exist at {}", expected_path.display()
-    );
-
-    // Assert: file is valid JSON with correct id
-    let loaded = store.load_conversation(session_id).expect("load failed");
-    assert_eq!(loaded.id, session_id);
-    assert!(!loaded.messages.is_empty(), "should have at least one message");
+async fn build_provider_openai_compat() {
+    // openai-compat backend → constructs synchronously, no network call.
+    let mut cfg = AppConfig::default();
+    cfg.provider.backend = "openai-compat".to_string();
+    cfg.provider.base_url = "http://localhost:1234/v1".to_string();
+    cfg.provider.model = "llama3".to_string();
+    let result = build_provider(&cfg).await;
+    assert!(result.is_ok());
 }
 ```
 
-**Compile check:** `cargo test`
+`cargo test --lib` and `cargo build` must both pass clean.
 
 ---
 
-### Step 4 — Update `--session` flag description and help text in `src/main.rs`
+## Acceptance Criteria
 
-The `--session` clap argument description should mention that it works in both
-`--prompt` and interactive modes:
+All of the following must be true for the loop to be considered complete:
 
-```rust
-/// Name or resume a session. In --prompt mode, defaults to a slug derived
-/// from the prompt text if not specified.
-#[arg(short = 's', long = "session")]
-session: Option<String>,
-```
+1. **`cargo build` is clean** — zero errors, zero warnings (the project's
+   existing `clippy::unwrap_used`, `clippy::expect_used`, `clippy::panic`
+   denials must continue to pass).
 
-No logic change — documentation only.
+2. **`cargo test --lib` passes** — all existing tests continue to pass; all
+   new tests added in Steps 1–8 pass.
 
-**Compile check:** `cargo build`
+3. **`ProviderConfig` has `base_url` and `api_key` fields** with empty-string
+   defaults that do not appear in serialized output when unset, and that are
+   correctly overlaid from TOML config files.
 
----
+4. **`OpenAiCompatProvider` exists** and implements `Provider`. It is exported
+   from `src/provider/mod.rs` as `pub use openai::OpenAiCompatProvider`.
 
-### Step 5 — Backlog housekeeping
+5. **`parse_sse_line` correctly handles** all of: text deltas, single tool
+   call, two sequential tool calls, `[DONE]` with and without an open tool,
+   token counts present and absent.
 
-Mark item 0 complete in `BACKLOG.md` (or wherever the project backlog lives).
-The line should change from:
+6. **`build_messages`** correctly converts all four `MessageContent` variants
+   to OpenAI format, including mixed assistant messages (text + tool_calls).
 
-```
-0. [ ] **Session persistence in --prompt mode** — ...
-```
+7. **`build_tools`** correctly converts Anthropic input_schema format to
+   OpenAI parameters format.
 
-to:
+8. **`build_provider` factory** exists in `src/provider/mod.rs`, selects
+   `OpenAiCompatProvider` for `backend = "openai-compat"` and `BedrockProvider`
+   for `backend = "bedrock"` (or any unrecognised value).
 
-```
-0. [x] **Session persistence in --prompt mode** — ...
-```
+9. **`main.rs` uses `build_provider`** — the two `BedrockProvider::new`
+   call-sites are gone; the file has no direct import of `BedrockProvider`.
 
-**Compile check:** `cargo test` (full suite must be green)
+10. **`ap.toml.example`** contains a commented-out `openai-compat` example
+    block showing `backend`, `base_url`, `api_key`, and `model`.
 
----
+11. **`turn()` is unchanged** — no modifications to `src/turn.rs`. The
+    `Provider` trait contract (`stream_completion` returning the same
+    `StreamEvent` sequence) is the only integration point.
 
-## Acceptance criteria
-
-All of the following must be true before the loop is considered complete:
-
-| # | Criterion |
-|---|---|
-| AC-1 | `cargo build` succeeds with zero errors and zero new warnings |
-| AC-2 | `cargo test` passes (all existing tests + new tests green) |
-| AC-3 | `src/session/mod.rs` exports `pub fn prompt_slug(prompt: &str, unix_secs: u64) -> String` |
-| AC-4 | `prompt_slug("hello", 1_742_601_600)` returns `"prompt-hello-2026-03-22"` |
-| AC-5 | `prompt_slug` output never exceeds 60 characters for any input |
-| AC-6 | `run_headless` always creates a `SessionStore` (not only when `--session` is given) |
-| AC-7 | When `--session` is absent, `run_headless` calls `prompt_slug` to derive the id |
-| AC-8 | When `--session <name>` is supplied, `run_headless` uses that name (existing behaviour preserved) |
-| AC-9 | After a successful turn, `run_headless` calls `store.save_conversation(&updated_conv)` unconditionally (guarded only by `exit_code == 0`) |
-| AC-10 | Integration test `headless_turn_saves_session_to_store` passes |
-| AC-11 | Stdout still receives streamed text (no regression to `route_headless_events`) |
-| AC-12 | Item 0 in the backlog is marked `[x]` |
-
----
-
-## Constraints
-
-- **No new dependencies** — all required types (`dirs`, `uuid`, `serde_json`,
-  `anyhow`) are already in `Cargo.toml`.
-- **No `chrono`** — use the existing `format_unix_as_iso8601` helper or replicate
-  the same Julian Day arithmetic.
-- **Functional-first** — `prompt_slug` must be a pure function; all I/O stays in
-  `run_headless`.
-- **`#[deny(clippy::unwrap_used)]` and `#[deny(unsafe_code)]`** remain in force;
-  use `unwrap_or_default()` / `?` / `unwrap_or_else` as appropriate.
-- Do not change the public API of `Conversation`, `SessionStore`, or `turn()`.
-- Do not modify `tests/noninteractive.rs` existing test cases — only add new ones.
+12. **The `reqwest` dependency** (already in `Cargo.toml`) is used by
+    `OpenAiCompatProvider` with the `stream` feature. Add
+    `features = ["json", "stream"]` to the `reqwest` entry in `Cargo.toml`
+    if the `stream` feature is not already present.
 
 ---
 

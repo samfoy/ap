@@ -389,3 +389,5 @@ For more information, try '--help'.
 [19:49:39] Review: **No, it did not land cleanly.** The goal — session persistence in `--prompt` mode — was never implemented. The loop's own summary admits it **failed** ("Failed: too many consecutive failures, 5 iterations, 4s"), and the only real output was scaffolding: a detailed `ap/PROMPT.md` spec and the backlog item flipped from `[ ]` to `[~]` (in-progress), not `[x]`.
 
 **The gap is the entire feature.** No Rust code was written — `src/main.rs`, `run_headless`, slug generation, and `SessionStore` integration were all left untouched. The commits in this range are entirely monitor/tooling fixes (`cf46ba6`, `7fc110e`, `2ed216d`) and planning artifacts, not the actual persistence implementation.
+[19:49:40] Starting: Provider abstraction
+[19:49:40] Starting: Provider abstraction
