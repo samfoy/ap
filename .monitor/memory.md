@@ -290,3 +290,15 @@ cd227c5 chore: init Session persistence in --prompt mode
 cf46ba6 fix(monitor): drop pdd-to-code-assist hat — use ap via Bedrock directly
 c6e7ea8 chore(backlog): add session persistence in --prompt mode as item 0
 f696785 chore: honest backlog reset + comprehensive PROMPT.md for full implementation loop
+
+## 2026-03-22 19:56 — Model switching
+Review: Let me review the relevant files from this project before giving you an assessment.**No, it did not land.** The monitor's own `memory.md` is unambiguous: the "Model switching" session worked on the wrong backlog item entirely (Retry with exponential backoff), and even that work was explicitly reset as spec-only with no implementation. Zero model-switching Rust code exists — no `/model` TUI command, no `--model` CLI flag, no provider-switching logic — and `src/` shows no commits across the entire range `f5a80a2..HEAD`.
+
+**The gap is total and structural.** Two subsequent sessions (Session persistence, Provider abstraction) also failed to land any code for the same reason: the loop writes a detailed spec into `ap/PROMPT.md` and flips the backlog item to `[~]`, then times out or hits consecutive failures before executing a single implementation step. The `f5a80a2` "init Model switching" commit arriving after "complete Provider abstraction" (`70f2849`) also signals the monitor is starting a new loop in a broken sequence rather than closing a completed one.
+Commits:
+f5a80a2 chore: init Model switching
+70f2849 chore(monitor): complete Provider abstraction
+e4487f0 chore: init Provider abstraction
+1e273c9 chore(monitor): complete Session persistence in --prompt mode
+cd227c5 chore: init Session persistence in --prompt mode
+cf46ba6 fix(monitor): drop pdd-to-code-assist hat — use ap via Bedrock directly
