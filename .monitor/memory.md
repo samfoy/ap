@@ -236,3 +236,13 @@ ed50cd9 feat: merge Pi/Agent Skills compatibility
 f796093 chore: strip ephemeral state before merge
 a9541d7 chore(monitor): start Pi/Agent Skills compatibility
 330872d chore(monitor): complete Amazon toolchain integration
+
+## 2026-03-22 17:18 — Prompt templates
+Review: The commits tell a clear story: **the goal was Prompt templates (item 23), but what landed was Project-level config (item 22).** The entire commit range (`c48e05b` → `618b4ed`) is exclusively Project-level config — `PROMPT.md` describes config discovery, `BACKLOG.md` shows item 22 ticked and item 23 marked `[~]` (in-progress). No source changes touched anything prompt-template related; the feature work is still ahead. That said, item 22 appears to have landed cleanly — the BACKLOG spec is well-defined and `PROMPT.md` is fully written — so the loop was productive, just one item behind the stated goal.
+Commits:
+618b4ed chore(monitor): complete Project-level config
+76fc09e feat: merge Project-level config
+a7131e8 chore: strip ephemeral state before merge
+f63390d chore(monitor): start Project-level config
+c48e05b chore: init Project-level config
+0d4b3c8 chore(monitor): complete Pi/Agent Skills compatibility

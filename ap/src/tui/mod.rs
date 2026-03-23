@@ -305,6 +305,7 @@ impl TuiApp {
         )));
 
         Self {
+            theme: Theme::default(),
             mode: AppMode::Normal,
             chat_history: Vec::new(),
             tool_entries: Vec::new(),
