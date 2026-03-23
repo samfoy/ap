@@ -72,6 +72,8 @@ pub enum ChatEntry {
         /// Truncated error output when `status == Error`; `None` for success.
         output_snippet: Option<String>,
     },
+    /// System/app notification (e.g. model switched, usage messages).
+    System(String),
 }
 
 /// Parse a raw text string into a sequence of [`ChatBlock`]s by scanning for
@@ -367,6 +369,7 @@ impl TuiApp {
         impl Provider for StubProvider {
             fn stream_completion<'a>(
                 &'a self,
+                _model: &'a str,
                 _messages: &'a [crate::provider::Message],
                 _tools: &'a [serde_json::Value],
                 _system_prompt: Option<&'a str>,
@@ -509,6 +512,19 @@ impl TuiApp {
     async fn handle_submit(&mut self, input: String) {
         let trimmed = input.trim().to_string();
         if trimmed.is_empty() {
+            return;
+        }
+
+        // ── /model slash command ──────────────────────────────────────────────
+        if let Some(rest) = trimmed.strip_prefix("/model") {
+            let name = rest.trim();
+            if name.is_empty() {
+                self.chat_history.push(ChatEntry::System("Usage: /model <name>".to_string()));
+            } else {
+                self.model_name = name.to_string();
+                self.conv.lock().await.model = name.to_string();
+                self.chat_history.push(ChatEntry::System(format!("Model switched to: {name}")));
+            }
             return;
         }
 
@@ -1206,6 +1222,7 @@ mod tests {
         impl crate::provider::Provider for StubProvider {
             fn stream_completion<'a>(
                 &'a self,
+                _model: &'a str,
                 _messages: &'a [crate::provider::Message],
                 _tools: &'a [serde_json::Value],
                 _system_prompt: Option<&'a str>,
@@ -1245,5 +1262,57 @@ mod tests {
         let app = TuiApp::headless_with_limit(Some(50_000));
         assert!(app.session_name.is_none(), "headless_with_limit() should have no session_name");
         assert!(app.store.is_none(), "headless_with_limit() should have no store");
+    }
+
+    // ─── Step 7: /model slash command tests ──────────────────────────────────
+
+    #[tokio::test]
+    async fn model_slash_command_updates_model_name() {
+        let mut app = TuiApp::headless();
+        app.handle_submit("/model claude-haiku".to_string()).await;
+        assert_eq!(app.model_name, "claude-haiku");
+    }
+
+    #[tokio::test]
+    async fn model_slash_command_updates_conv_model() {
+        let mut app = TuiApp::headless();
+        app.handle_submit("/model claude-haiku".to_string()).await;
+        assert_eq!(app.conv.lock().await.model, "claude-haiku");
+    }
+
+    #[tokio::test]
+    async fn model_slash_command_pushes_system_confirmation() {
+        let mut app = TuiApp::headless();
+        app.handle_submit("/model claude-haiku".to_string()).await;
+        assert_eq!(
+            app.chat_history.last(),
+            Some(&ChatEntry::System("Model switched to: claude-haiku".to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn model_slash_command_no_arg_shows_usage() {
+        let mut app = TuiApp::headless();
+        app.handle_submit("/model".to_string()).await;
+        assert_eq!(
+            app.chat_history.last(),
+            Some(&ChatEntry::System("Usage: /model <name>".to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn model_slash_command_is_waiting_remains_false() {
+        let mut app = TuiApp::headless();
+        assert!(!app.is_waiting);
+        app.handle_submit("/model claude-haiku".to_string()).await;
+        assert!(!app.is_waiting, "/model should not set is_waiting");
+    }
+
+    #[tokio::test]
+    async fn model_slash_command_no_user_entry_pushed() {
+        let mut app = TuiApp::headless();
+        app.handle_submit("/model claude-haiku".to_string()).await;
+        let has_user_entry = app.chat_history.iter().any(|e| matches!(e, ChatEntry::User(_)));
+        assert!(!has_user_entry, "no ChatEntry::User should be pushed for /model command");
     }
 }

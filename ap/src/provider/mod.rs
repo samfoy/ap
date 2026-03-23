@@ -95,6 +95,7 @@ pub enum ProviderError {
 pub trait Provider: Send + Sync {
     fn stream_completion<'a>(
         &'a self,
+        model: &'a str,
         messages: &'a [Message],
         tools: &'a [serde_json::Value],
         system_prompt: Option<&'a str>,

@@ -35,6 +35,10 @@ struct Args {
     #[arg(long)]
     context_limit: Option<u32>,
 
+    /// Override the model for this run (overrides config file)
+    #[arg(long = "model")]
+    model: Option<String>,
+
     /// List saved sessions and exit
     #[arg(long = "list-sessions")]
     list_sessions: bool,
@@ -49,6 +53,9 @@ async fn main() -> anyhow::Result<()> {
     // CLI flag overrides config file value
     if let Some(limit) = args.context_limit {
         config.context.limit = Some(limit);
+    }
+    if let Some(m) = args.model {
+        config.provider.model = m;
     }
 
     // --list-sessions: print all saved sessions and exit
@@ -374,6 +381,9 @@ fn resolve_skill_dirs(dirs: Option<&Vec<PathBuf>>) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use super::Args;
+    use clap::Parser;
+
     #[test]
     fn test_version_string() {
         assert_eq!(env!("CARGO_PKG_VERSION"), "0.1.0");
@@ -382,5 +392,18 @@ mod tests {
     #[test]
     fn test_binary_name() {
         assert_eq!(env!("CARGO_PKG_NAME"), "ap");
+    }
+
+    #[test]
+    fn test_model_flag_in_args() {
+        let args = Args::try_parse_from(["ap", "--model", "my-model"])
+            .expect("should parse --model flag");
+        assert_eq!(args.model, Some("my-model".to_string()));
+    }
+
+    #[test]
+    fn test_model_flag_absent_is_none() {
+        let args = Args::try_parse_from(["ap"]).expect("should parse with no flags");
+        assert_eq!(args.model, None);
     }
 }

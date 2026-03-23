@@ -16,7 +16,7 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
             backend: "bedrock".to_string(),
-            model: "us.anthropic.claude-sonnet-4-6".to_string(),
+            model: "us.anthropic.claude-sonnet-4-6-v1:0".to_string(),
             region: "us-west-2".to_string(),
         }
     }
@@ -280,7 +280,7 @@ mod tests {
     fn test_defaults_when_no_file() {
         // No config files → all defaults returned
         let cfg = AppConfig::load_with_paths(None, None).unwrap();
-        assert_eq!(cfg.provider.model, "us.anthropic.claude-sonnet-4-6");
+        assert_eq!(cfg.provider.model, "us.anthropic.claude-sonnet-4-6-v1:0");
         assert_eq!(cfg.provider.backend, "bedrock");
         assert_eq!(cfg.provider.region, "us-west-2");
         assert!(cfg.hooks.pre_tool_call.is_none());

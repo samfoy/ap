@@ -34,6 +34,7 @@ impl MockProvider {
 impl Provider for MockProvider {
     fn stream_completion<'a>(
         &'a self,
+        _model: &'a str,
         _messages: &'a [Message],
         _tools: &'a [serde_json::Value],
         _system_prompt: Option<&'a str>,
@@ -110,6 +111,7 @@ impl MockErrorProvider {
 impl Provider for MockErrorProvider {
     fn stream_completion<'a>(
         &'a self,
+        _model: &'a str,
         _messages: &'a [Message],
         _tools: &'a [serde_json::Value],
         _system_prompt: Option<&'a str>,

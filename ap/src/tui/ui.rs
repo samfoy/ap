@@ -177,6 +177,13 @@ pub fn chat_entries_to_lines<'a>(
                 }
                 lines.push(Line::from(""));
             }
+            ChatEntry::System(text) => {
+                let style = Style::default().fg(theme.muted);
+                for line in text.lines() {
+                    lines.push(Line::styled(format!("  ◆ {line}"), style));
+                }
+                lines.push(Line::from(""));
+            }
             ChatEntry::ToolCall { name, status, output_snippet } => {
                 let (icon, icon_style) = match status {
                     ToolStatus::Running => (
@@ -487,6 +494,61 @@ mod tests {
     fn status_bar_ctx_display_with_limit() {
         let s = format_ctx_segment(45200, Some(200000));
         assert!(s.contains("ctx: 45.2k/200k (23%)"), "got: {s}");
+    }
+
+    // ─── System entry rendering tests ────────────────────────────────────────
+
+    /// System entry renders with muted color (`Color::Rgb(110, 106, 134)`).
+    #[test]
+    fn system_entry_renders_with_muted_style() {
+        use crate::tui::ChatEntry;
+        use ratatui::style::Color;
+
+        let theme = Theme::default();
+        let history = vec![ChatEntry::System("foo".to_string())];
+        let lines = chat_entries_to_lines(&history, &theme);
+
+        let muted_color = Color::Rgb(110, 106, 134);
+        // Line::styled sets line.style, not span.style
+        let has_muted = lines.iter().any(|line| {
+            line.style.fg == Some(muted_color)
+                || line.spans.iter().any(|span| span.style.fg == Some(muted_color))
+        });
+        assert!(has_muted, "System entry must have at least one line with theme.muted color");
+    }
+
+    /// System entry renders with `"  ◆ "` diamond prefix.
+    #[test]
+    fn system_entry_renders_with_diamond_prefix() {
+        use crate::tui::ChatEntry;
+
+        let theme = Theme::default();
+        let history = vec![ChatEntry::System("hello".to_string())];
+        let lines = chat_entries_to_lines(&history, &theme);
+
+        let has_diamond = lines.iter().any(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            text.starts_with("  ◆ ")
+        });
+        assert!(has_diamond, "System entry must have a line starting with '  ◆ '");
+    }
+
+    /// System entry adds a trailing blank line.
+    #[test]
+    fn system_entry_adds_blank_line() {
+        use crate::tui::ChatEntry;
+
+        let theme = Theme::default();
+        let history = vec![ChatEntry::System("msg".to_string())];
+        let lines = chat_entries_to_lines(&history, &theme);
+
+        assert!(!lines.is_empty(), "Must have at least 1 line");
+        let last = lines.last().unwrap();
+        let text: String = last.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            text.is_empty(),
+            "Last line must be empty (trailing blank), got: {text:?}"
+        );
     }
 
     // ─── Theme tests ──────────────────────────────────────────────────────────

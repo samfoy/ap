@@ -9,6 +9,9 @@ use super::{Message, MessageContent, Provider, ProviderError, Role, StreamEvent}
 /// `invoke_model_with_response_stream`.
 pub struct BedrockProvider {
     client: Client,
+    // Retained for future use (e.g., default model fallback); currently the
+    // model is passed per-call via `stream_completion(model, ...)`.
+    #[allow(dead_code)]
     model: String,
 }
 
@@ -162,6 +165,7 @@ impl BedrockProvider {
 impl Provider for BedrockProvider {
     fn stream_completion<'a>(
         &'a self,
+        model: &'a str,
         messages: &'a [Message],
         tools: &'a [serde_json::Value],
         system_prompt: Option<&'a str>,
@@ -174,7 +178,7 @@ impl Provider for BedrockProvider {
             }
         };
 
-        let model = self.model.clone();
+        let model = model.to_string();
         let client = &self.client;
 
         // We need to drive the AWS SDK call inside the stream.  We collect all

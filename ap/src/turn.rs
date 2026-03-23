@@ -88,7 +88,9 @@ async fn turn_loop(
         // async stream boundary (stream lifetime may outlive the loop body).
         let system_prompt_owned = conv.system_prompt.clone();
         let system_prompt = system_prompt_owned.as_deref();
-        let mut stream = provider.stream_completion(&messages_snapshot, &tool_schemas, system_prompt);
+        // Clone model inside the loop so each iteration uses the current conv.model.
+        let model = conv.model.clone();
+        let mut stream = provider.stream_completion(&model, &messages_snapshot, &tool_schemas, system_prompt);
 
         let mut assistant_text = String::new();
         let mut pending_tools: Vec<PendingTool> = Vec::new();
@@ -326,6 +328,7 @@ mod tests {
     impl Provider for MockProvider {
         fn stream_completion<'a>(
             &'a self,
+            _model: &'a str,
             _messages: &'a [crate::provider::Message],
             _tools: &'a [serde_json::Value],
             _system_prompt: Option<&'a str>,
@@ -346,6 +349,7 @@ mod tests {
     impl Provider for ErrorProvider {
         fn stream_completion<'a>(
             &'a self,
+            _model: &'a str,
             _messages: &'a [crate::provider::Message],
             _tools: &'a [serde_json::Value],
             _system_prompt: Option<&'a str>,
@@ -353,6 +357,35 @@ mod tests {
             Box::pin(stream::iter(vec![Err(ProviderError::Aws(
                 "network failure".to_string(),
             ))]))
+        }
+    }
+
+    // ── CapturingMockProvider ─────────────────────────────────────────────────
+
+    /// A provider that records the last `model` argument passed to `stream_completion`.
+    struct CapturingMockProvider {
+        captured_model: Arc<Mutex<String>>,
+    }
+
+    impl CapturingMockProvider {
+        fn new(captured_model: Arc<Mutex<String>>) -> Self {
+            Self { captured_model }
+        }
+    }
+
+    impl Provider for CapturingMockProvider {
+        fn stream_completion<'a>(
+            &'a self,
+            model: &'a str,
+            _messages: &'a [crate::provider::Message],
+            _tools: &'a [serde_json::Value],
+            _system_prompt: Option<&'a str>,
+        ) -> BoxStream<'a, Result<StreamEvent, ProviderError>> {
+            *self.captured_model.lock().unwrap() = model.to_string();
+            Box::pin(stream::iter(vec![
+                Ok(StreamEvent::TextDelta("ok".to_string())),
+                Ok(turn_end_event()),
+            ]))
         }
     }
 
@@ -674,6 +707,30 @@ mod tests {
             usage,
             Some((42, 7)),
             "turn() must emit TurnEvent::Usage with the provider's token counts"
+        );
+    }
+
+    // ── AC1: CapturingMockProvider receives conv.model ────────────────────────
+
+    #[tokio::test]
+    async fn turn_passes_conv_model_to_provider() {
+        let captured = Arc::new(Mutex::new(String::new()));
+        let provider = CapturingMockProvider::new(Arc::clone(&captured));
+
+        let tools = ToolRegistry::new();
+        let middleware = Middleware::default();
+
+        let mut conv = make_conv();
+        conv.model = "captured-model-test".to_string();
+
+        turn(conv, &provider, &tools, &middleware)
+            .await
+            .expect("turn should succeed");
+
+        let recorded = captured.lock().unwrap().clone();
+        assert_eq!(
+            recorded, "captured-model-test",
+            "provider should receive conv.model as the model argument"
         );
     }
 }

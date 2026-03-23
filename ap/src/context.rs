@@ -56,6 +56,7 @@ pub fn find_summary_split(messages: &[Message], keep_recent: usize) -> Option<us
 /// `TextDelta` into a `String`, and returns it.
 pub async fn summarise_messages(
     messages: &[Message],
+    model: &str,
     provider: &dyn Provider,
 ) -> Result<String> {
     // Build a text representation of the messages to summarise.
@@ -94,7 +95,7 @@ pub async fn summarise_messages(
         content: vec![MessageContent::Text { text: prompt }],
     }];
 
-    let mut stream = provider.stream_completion(&summary_messages, &[], None);
+    let mut stream = provider.stream_completion(model, &summary_messages, &[], None);
     let mut summary = String::new();
 
     use futures::StreamExt;
@@ -144,7 +145,7 @@ pub async fn maybe_compress_context(
 
     // Summarise the messages before the split.
     let to_summarise = &conv.messages[..split_idx];
-    let summary_text = summarise_messages(to_summarise, provider).await?;
+    let summary_text = summarise_messages(to_summarise, &conv.model, provider).await?;
 
     // Build new message list: summary wrapper + recent tail.
     let summary_msg = Message {
@@ -297,6 +298,7 @@ mod tests {
     impl Provider for MockProvider {
         fn stream_completion<'a>(
             &'a self,
+            _model: &'a str,
             _messages: &'a [Message],
             _tools: &'a [serde_json::Value],
             _system_prompt: Option<&'a str>,
@@ -316,6 +318,7 @@ mod tests {
     impl Provider for ErrorProvider {
         fn stream_completion<'a>(
             &'a self,
+            _model: &'a str,
             _messages: &'a [Message],
             _tools: &'a [serde_json::Value],
             _system_prompt: Option<&'a str>,
@@ -345,7 +348,7 @@ mod tests {
             },
         ]]);
         let messages = vec![user_msg("hello")];
-        let result = summarise_messages(&messages, &provider).await;
+        let result = summarise_messages(&messages, "test-model", &provider).await;
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
         assert_eq!(result.unwrap(), "foobar");
     }
@@ -354,7 +357,7 @@ mod tests {
     async fn summarise_messages_provider_error_returns_err() {
         let provider = ErrorProvider;
         let messages = vec![user_msg("hello")];
-        let result = summarise_messages(&messages, &provider).await;
+        let result = summarise_messages(&messages, "test-model", &provider).await;
         assert!(result.is_err(), "expected Err but got Ok");
     }
 
