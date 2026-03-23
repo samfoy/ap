@@ -329,7 +329,12 @@ def main():
                     update_memory(current_title, rev)
 
                     # Verify something actually landed in src/
-                    src_changes = run("git diff HEAD~1 --name-only -- 'ap/src/'").stdout.strip()
+                    # Check if any src/ changes landed since the init commit for this item
+                    init_sha = run(f"git log --oneline --grep='chore: init {current_title}' --format='%H' | head -1").stdout.strip()
+                    if init_sha:
+                        src_changes = run(f"git diff {init_sha} HEAD --name-only -- 'ap/src/'").stdout.strip()
+                    else:
+                        src_changes = run("git diff HEAD~3 HEAD --name-only -- 'ap/src/'").stdout.strip()
                     if not src_changes:
                         log(f"⚠️  No src/ changes detected for {current_title} — marking failed, requeueing")
                         set_item_status(current_title, " ")
