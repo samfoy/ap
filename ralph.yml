@@ -2,9 +2,12 @@
 # Docs: https://github.com/mikeyobrien/ralph-orchestrator
 
 cli:
-  backend: "ap"
+  backend: "custom"
+  command: "/Users/sam.painter/Projects/ap/ap/target/release/ap"
+  prompt_flag: "--prompt"
+  prompt_mode: "arg"
+  args: []
 
 event_loop:
   prompt_file: "PROMPT.md"
   completion_promise: "LOOP_COMPLETE"
-  # No iteration or runtime limits — monitor agent will adjust if needed
